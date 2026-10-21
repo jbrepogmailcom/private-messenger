@@ -1,0 +1,4 @@
+include README.md SECURITY.md THREAT_MODEL.md PROTOCOL_NOTES.md MILESTONES.md
+include VERIFICATION.md RELEASING.md requirements*.lock LICENSE
+recursive-include scripts *.py *.sh
+recursive-include tests *.py
