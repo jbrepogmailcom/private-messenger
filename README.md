@@ -88,6 +88,16 @@ Bob sees `Alice: Ahoj Bobe!`. Bob can reply the same way. No send command or man
 queue-address exchange is needed. `/history` shows recent history; `/quit` exits.
 Offline messages arrive when the recipient starts the same profile again.
 
+`/address` displays the current profile's receiving server, sender queue ID and
+payload public key. Outside the running chat, `./chat Bob --address` prompts for
+the password and displays the same values offline, without modifying the vault.
+If Bob is running, use `/address` there (restart after updating the code), or quit
+that profile first. These are local-demo routing/key details, not a general contact
+invitation: the queue is already secured for the paired sender. Queue IDs are
+random identifiers assigned by the router on NEW; payload key pairs are generated
+locally by PyNaCl. Setup copies Bob's sender queue ID and public payload key into
+Alice's encrypted profile; names are never used for server-side lookup.
+
 Profiles persist at `~/.local/share/private-messenger/terminal-demo/`, in separate
 encrypted vaults. No password file is created; existing non-demo profiles are
 untouched. Both demo vaults deliberately share the password chosen during setup.

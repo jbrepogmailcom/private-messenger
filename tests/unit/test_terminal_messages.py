@@ -6,9 +6,15 @@ from nacl.exceptions import CryptoError
 from nacl.public import Box, PrivateKey, PublicKey
 
 from private_messenger.config import b64, unb64
-from private_messenger.messaging.local_demo import FORMAT, DemoMessages, safe_terminal
+from private_messenger.messaging.local_demo import (
+    FORMAT,
+    READY,
+    DemoMessages,
+    public_address,
+    safe_terminal,
+)
 from private_messenger.smp.queues import Delivery
-from private_messenger.storage.vault import Vault, VaultError
+from private_messenger.storage.vault import Vault, VaultError, atomic_write
 
 
 @pytest.fixture
@@ -17,7 +23,9 @@ def pair(tmp_path):
     vaults = {}
     try:
         for role, peer in (("Alice", "Bob"), ("Bob", "Alice")):
-            vault = vaults[role] = Vault(tmp_path / f"{role}.vault", "test secret", create=True)
+            vault = vaults[role] = Vault(
+                tmp_path / f"{role.lower()}.vault", "test secret", create=True
+            )
             vault.put(
                 "terminal_demo",
                 {
@@ -27,6 +35,11 @@ def pair(tmp_path):
                     "conversation": "fixture-pair",
                     "payload_private": b64(bytes(keys[role])),
                     "peer_public": b64(bytes(keys[peer].public_key)),
+                    "server": f"smp://{b64(bytes(32))}@router.invalid:5223",
+                    "receive": {
+                        "sender_id": b64(secrets.token_bytes(24)),
+                        "recipient_id": b64(secrets.token_bytes(24)),
+                    },
                 },
             )
         yield {role: DemoMessages(vault, role) for role, vault in vaults.items()}
@@ -128,3 +141,50 @@ def test_standard_box_interoperability_and_size_bounds(pair):
 
 def test_terminal_control_characters_are_never_executed():
     assert safe_terminal("ahoj\x1b[2J\n\u202etest") == "ahoj\\u001b[2J\\u000a\\u202etest"
+
+
+def test_public_address_only_exposes_receiving_route_and_public_key(pair):
+    alice, bob = pair["Alice"], pair["Bob"]
+    address = public_address(bob.profile)
+    assert set(address) == {"server", "sender_id", "payload_public_key"}
+    assert address["sender_id"] == bob.profile["receive"]["sender_id"]
+    assert address["payload_public_key"] == alice.profile["peer_public"]
+    assert bob.profile["payload_private"] not in json.dumps(address)
+    assert bob.profile["receive"]["recipient_id"] not in json.dumps(address)
+
+
+def test_address_cli_is_read_only_and_offline(pair, tmp_path, monkeypatch, capsys):
+    from private_messenger.messaging.terminal import main
+
+    bob = pair["Bob"]
+    expected = public_address(bob.profile)
+    original = bob.vault.path.read_bytes()
+    bob.vault.close()
+    atomic_write(tmp_path / "pair.ready", READY, overwrite=False)
+    password_file = tmp_path / "password"
+    atomic_write(password_file, b"test secret", overwrite=False)
+
+    def unexpected_network(*args, **kwargs):
+        raise AssertionError("address display must not access the network")
+
+    monkeypatch.setattr(
+        "private_messenger.networking.connection.Network.connect", unexpected_network
+    )
+    monkeypatch.setattr(
+        "private_messenger.messaging.terminal.download_public_password", unexpected_network
+    )
+    assert (
+        main(
+            [
+                "Bob",
+                "--address",
+                "--directory",
+                str(tmp_path),
+                "--passphrase-file",
+                str(password_file),
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == expected
+    assert bob.vault.path.read_bytes() == original

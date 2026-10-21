@@ -173,6 +173,14 @@ test behavior on this router, not PFS/PCS/PQ properties or remote pairing securi
 Existing generated distributions predate these source changes; use the source
 checkout's `chat` launcher. There is no newly signed production release.
 
+Follow-up: `/address` and offline `chat Bob --address` display only the receiving
+router URI, sender queue ID and payload public key. All nine focused local-message
+tests passed, including two added assertions that recipient credentials/private
+keys are absent and that the offline command neither accesses the network nor
+changes the encrypted vault snapshot. Existing user profiles were not decrypted
+or modified for these tests. The previously verified public-message transport is
+unchanged; no additional public-router test was needed for the local display.
+
 ## Requirements still unverified or unavailable
 
 - Remote E2E identity/contact authentication, reviewed messenger session protocol,

@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import json
 import queue
 import sys
 import threading
@@ -26,6 +27,7 @@ from .local_demo import (
     is_ready,
     profile_path,
     provision,
+    public_address,
     safe_terminal,
 )
 
@@ -130,7 +132,7 @@ def run_chat(vault: Vault, role: str) -> int:
     print(f"Přihlášen(a): {role} · protějšek: {peer}", flush=True)
     print("Test na jednom počítači · švýcarský SMP · DIRECT (server vidí IP).", flush=True)
     print("Lokálně předané klíče, NaCl Box. Bez ratchetu, PFS/PCS a PQ ochrany.", flush=True)
-    print("Piš zprávu a stiskni Enter. /history = historie, /quit = konec.", flush=True)
+    print("Piš zprávu a Enter. /address = adresa, /history = historie, /quit = konec.", flush=True)
     history()
     receiving.start()
     typing.start()
@@ -148,8 +150,10 @@ def run_chat(vault: Vault, role: str) -> int:
                     break
                 if value == "/history":
                     history()
+                elif value == "/address":
+                    say(json.dumps(public_address(profile), ensure_ascii=True))
                 elif value.startswith("/"):
-                    say("Příkazy: /history, /quit. Jinak napiš přímo zprávu.")
+                    say("Příkazy: /address, /history, /quit. Jinak napiš přímo zprávu.")
                 elif value:
                     try:
                         mid, ciphertext = messages.prepare(value)
@@ -215,9 +219,17 @@ def main(argv=None) -> int:
         default=Path.home() / ".local/share/private-messenger/terminal-demo",
     )
     parser.add_argument("--passphrase-file", type=Path, help="0600 soubor, pro automatické testy")
+    parser.add_argument(
+        "--address",
+        action="store_true",
+        help="po odemčení pouze vypíše veřejnou adresu; bez síťového spojení",
+    )
     args = parser.parse_args(argv)
     try:
         new = not is_ready(args.directory)
+        if new and args.address:
+            print("Profily ještě nejsou vytvořené. Nejprve spusť chat Alice.", file=sys.stderr)
+            return 1
         if new:
             print("První spuštění připraví místní testovací profily Alice i Bob.", flush=True)
         if args.passphrase_file:
@@ -231,7 +243,17 @@ def main(argv=None) -> int:
             provision(args.directory, secret, Server.parse(SERVER), download_public_password())
         with Vault(profile_path(args.directory, args.role), secret) as vault:
             secret = None
+            if args.address:
+                print(json.dumps(public_address(vault.get("terminal_demo")), indent=2), flush=True)
+                return 0
             return run_chat(vault, args.role)
+    except BlockingIOError:
+        print(
+            "Profil už je otevřený. V běžícím chatu použij /address; "
+            "po aktualizaci jej nejprve ukonči přes /quit.",
+            file=sys.stderr,
+        )
+        return 1
     except (ValueError, OSError, EOFError, CryptoError, SSL.Error):
         print(
             "Spuštění selhalo: zkontroluj heslo, připojení a dostupnost SMP. "

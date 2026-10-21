@@ -138,6 +138,24 @@ def safe_terminal(text: str) -> str:
     )
 
 
+def public_address(profile: dict) -> dict:
+    """Public receiving route/key only; not a general contact invitation.
+
+    The queue has already been secured for the paired sender. Publishing these
+    values does not grant a new sender its authorization key.
+    """
+    if not isinstance(profile, dict) or profile.get("format") != FORMAT:
+        raise VaultError("invalid local demo profile")
+    sender_id = unb64(profile["receive"]["sender_id"])
+    if not 16 <= len(sender_id) <= 24:
+        raise VaultError("invalid saved sender queue identifier")
+    return {
+        "server": Server.parse(profile["server"]).uri,
+        "sender_id": b64(sender_id),
+        "payload_public_key": b64(bytes(PrivateKey(unb64(profile["payload_private"])).public_key)),
+    }
+
+
 class DemoMessages:
     def __init__(self, vault: Vault, role: str):
         self.vault = vault
