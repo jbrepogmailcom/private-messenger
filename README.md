@@ -65,6 +65,19 @@ the trusted platform, separately from Python lockfiles.
 
 ## Real Alice/Bob transport demo
 
+On the configured development machine, a single command runs the Swiss-router
+test, prepares temporary Alice/Bob profiles and automatically fetches the
+operator's published queue-creation password over HTTPS:
+
+```bash
+bash scripts/demo_swiss.sh
+```
+
+It requires the already verified router certificate identity; a changed identity
+or an unexpected website redirect stops the test. It uses direct TLS and sends
+only encrypted random test payloads. Temporary profiles and queues are cleaned up.
+This remains an opaque transport test; there is no text-chat interface yet.
+
 Czech walkthrough: [two separate clients](TEST_TWO_CLIENTS_CS.md) and
 [server selection / Iceland investigation](SERVER_SELECTION_CS.md).
 

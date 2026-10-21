@@ -1,5 +1,14 @@
 # Test dvou oddělených klientů
 
+Nejjednodušší ověření na tomto počítači — jeden příkaz, bez ruční konfigurace:
+
+```bash
+bash /home/janbenes/private-messenger/scripts/demo_swiss.sh
+```
+
+Sám založí dočasné profily Alice/Bob, získá zveřejněné heslo švýcarského routeru,
+otestuje online/offline přenos a uklidí. Níže je ruční varianta pro vlastní profily.
+
 Testuje se transport náhodných dat. Konverzační E2E šifrování a ratchet dosud
 nejsou implementované; nejde ještě o textový chat.
 

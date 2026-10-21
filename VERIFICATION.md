@@ -113,6 +113,14 @@ distribution established. `dist/` is generated and excluded from Git.
 
 ## Requirements still unverified or unavailable
 
+The follow-up one-command `scripts/demo_swiss.sh` launcher also passed its real
+Swiss-router run. It downloads only the operator's public configuration over
+validated HTTPS, pins the known router identity and performs the existing
+two-process transport demo. Two additional fixture tests verify rejection of
+changed router identity/host/port and insecure or cross-origin redirects. These
+fixture tests passed, as did Ruff. Its temporary profiles and queue were cleaned
+up; it does not implement text chat or create permanent user accounts.
+
 Follow-up on the same date: a full two-process demo passed on the independent
 Urban-Network relay (`urban-network.dyndns.org:5224`, v18) using its operator's
 published queue-creation password. Online/offline delivery, redelivery/deduplication,
