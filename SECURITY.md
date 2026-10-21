@@ -73,6 +73,43 @@ assumptions, not features supplied by this application.
 
 ## Cryptographic integration blockers
 
+### Separate locally paired terminal demo
+
+`./chat Alice` and `./chat Bob` are a same-computer test harness, not milestone 2.
+One trusted local setup creates both profiles, contact-specific Curve25519 keys,
+separate queue credentials and a random conversation identifier, then provisions
+each profile's peer public key locally. It secures both queues before marking setup
+ready. This trust anchor is the local machine and setup, not a remotely authenticated
+invitation. Both encrypted demo vaults intentionally use the same supplied password.
+Existing profiles and the main CLI's blocked messenger commands are not repurposed.
+
+Payload encryption calls the complete published PyNaCl `Box.encrypt/decrypt` API,
+Curve25519/XSalsa20-Poly1305 with library-generated random 192-bit nonces. No new KEX,
+KDF, cipher or ratchet is introduced. The authenticated encrypted application data
+contains the format, conversation, direction, random application ID and text; no
+extra fields are added to SMP itself. The demo envelope/application has not been
+independently reviewed. Its static payload keys give **no PFS, PCS or PQ protection**:
+stealing either profile's payload private key and the peer public key exposes
+recorded and future ciphertext for that pair. No remote-device pairing is offered.
+Do not mistake this convenience demo for completion of the required hybrid protocol.
+
+Incoming text/history and router delivery records persist in one encrypted
+transaction before ACK. Authenticated application IDs deduplicate republishing
+under new router IDs; conflicts and invalid ciphertext stop reception without ACK.
+Whole-vault rollback defeats this replay memory. History insertion is idempotent;
+terminal display across crashes cannot have a once-only guarantee. Terminal control
+and Unicode format characters in received text are escaped. Text is displayed on
+the terminal by explicit user request; it is not written to network/debug logs.
+The launcher is explicitly DIRECT with a fixed pin, no alternative-router fallback.
+Receiver reconnection uses bounded backoff. Idle SUB uses socket readiness and
+periodic PING, not repeated GET. SEND is never automatically retried; durable
+`not_sent`, `acceptance_unknown`, `server_accepted` or `rejected` states appear in
+history. Server acceptance is not a recipient receipt. Router retention and quota
+still limit offline delivery. Interrupted setup retains encrypted queue recovery
+credentials when cleanup cannot be confirmed; it refuses to overwrite them.
+
+### Required messenger protocol
+
 The reviewed Double Ratchet/Sparse PQ/Triple Ratchet specification is at
 https://signal.org/docs/specifications/doubleratchet/ . libsignal's maintained
 bindings target Java, Swift and TypeScript; the upstream project states external

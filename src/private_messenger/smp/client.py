@@ -190,6 +190,14 @@ class Client:
             self.close()
             raise
 
+    def wait_delivery(self, queue: ReceiveQueue, timeout: float = 1.0) -> Delivery | None:
+        """Poll an established subscription; ordinary idle time does not reconnect."""
+        if self.transport is None or self.modes.get(queue.recipient_id) != "SUB":
+            raise ProtocolError("subscribe before waiting for a delivery")
+        if self.events or self.transport.readable(timeout):
+            return self.next_delivery(queue)
+        return None
+
     def acknowledge(self, queue: ReceiveQueue, message_id: bytes) -> Delivery | None:
         if len(message_id) != 24:
             raise ProtocolError("message ID must contain 24 bytes")

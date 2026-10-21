@@ -3,7 +3,7 @@
 | Milestone | State | Evidence / remaining work |
 |---|---|---|
 | 1: Native SMP interoperability | COMPLETE for the implemented ordinary-client command subset | Separate Python processes, public v20 router, online/offline opaque payloads, ACK/redelivery, persistence, reconnect and sender-key separation; see verification report |
-| 2: Authenticated encrypted messenger | PARTIAL / BLOCKED | Local identities and encrypted vault work. Reviewed hybrid session integration, authenticated invitations, contact verification, bidirectional E2E message protocol, history and receipts remain absent |
+| 2: Authenticated encrypted messenger | PARTIAL / BLOCKED | Local identities/vault work. Separate same-computer Alice/Bob text demo uses locally provisioned standard NaCl Box keys, encrypted history and application-ID deduplication. Reviewed hybrid session integration, remote invitations/contact verification and receipts remain absent; demo is not this milestone's exit criterion |
 | 3: PFS and PCS | BLOCKED | No vetted ratchet integrated; no application skipped-key, out-of-order, compromise/recovery or rollback-safe ratchet tests |
 | 4: Post-quantum | BLOCKED | No reviewed hybrid KEX/PQ ratchet integrated or interoperable vectors; no PQ claims |
 | 5: Anonymity improvements | PARTIAL | DIRECT/TOR adapters, remote DNS and SOCKS isolation; no traffic-correlation resistance proof, cover traffic, queue rotation, redundant routing or real mixnet adapter |

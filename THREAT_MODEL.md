@@ -1,6 +1,7 @@
 # Threat model and testable limits
 
-Scope: milestone-1 opaque ciphertext transport and local storage. Confidentiality,
+Scope: milestone-1 opaque ciphertext transport, local storage and the separately
+identified same-computer text demo described below. Confidentiality,
 authentication, availability and anonymity are separate properties. There is no
 claim of perfect security, superiority, audited correctness or protection against
 a nation-state adversary with broad visibility.
@@ -35,3 +36,15 @@ Test evidence and untested requirements are tracked in
 time, retained keys, attacker access duration, authenticated fresh entropy, skipped
 key bounds, restoration behavior and what is assumed erased. Those assertions
 cannot be inferred from the current transport tests.
+
+The optional `chat` launcher locally provisions Alice/Bob on the same trusted
+computer and encrypts text with standard PyNaCl Box before SMP SEND. For this demo
+only, a malicious router does not know payload keys, ciphertext tampering fails,
+conversation/direction mismatches fail, and persisted authenticated application IDs
+deduplicate replay even with new router IDs. Tests exercise those bounded assertions.
+The router can still delete, reorder, delay or correlate traffic; DIRECT exposes
+the IP. Whole-vault rollback can erase replay memory. Shared setup/password and a
+compromise of the host expose both demo profiles. Static payload-key theft exposes
+past and future messages; there is no ratchet, PFS, PCS or quantum protection.
+Local provisioning does not authenticate a remote person or establish safe remote
+pairing. The main threat table's absent messenger-session protections remain absent.

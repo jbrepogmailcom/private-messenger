@@ -111,7 +111,7 @@ The development public key proves no publisher identity and is explicitly labele
 untrusted for updates. No release private key was retained or production key
 distribution established. `dist/` is generated and excluded from Git.
 
-## Requirements still unverified or unavailable
+## Earlier follow-up transport tests
 
 The follow-up one-command `scripts/demo_swiss.sh` launcher also passed its real
 Swiss-router run. It downloads only the operator's public configuration over
@@ -132,10 +132,55 @@ results above remain historical runs of their stated source. Detailed geographic
 evidence and operator-trust limits are in SERVER_SELECTION_CS.md. The distributions
 described above predate this follow-up and do not include this CLI option.
 
-- E2E identity/contact authentication, bidirectional conversational encryption,
-  ML-KEM/hybrid KEX, PQXDH compatibility and PQ ratchets: not implemented.
+## Interactive local-pairing demo (2026-10-21)
+
+The new executable `chat` launcher was verified against the unchanged public
+Urban-Network SMP router in Switzerland (v18), with two independently running
+Python clients. No mocks or local forwarding transport were used for these runs.
+
+Two opt-in integration tests passed separately:
+
+```bash
+PM_PUBLIC_TERMINAL_DEMO=1 .venv/bin/pytest -q \
+  tests/integration/test_terminal_demo.py
+```
+
+- Two-process online Unicode text delivery and replies, idle SUB beyond the normal
+  operation timeout without reconnect, Bob's complete exit and restart, offline
+  delivery, processing the next message returned by ACK, encrypted history
+  restoration, and republishing the identical authenticated application ciphertext
+  twice under distinct router IDs. Bob retained one history row and displayed the
+  replay fixture once; its queue was empty after ACK. This test passed in 35.03s.
+- Two actual controlling pseudo-terminals launching the executable `./chat`, first
+  setup via hidden password/confirmation prompts, Bob's login with the same
+  password, and typed text in both directions. The password was absent from both
+  terminal outputs. This test passed in 11.97s.
+
+All test queues were deleted and all test profiles used temporary directories;
+no persistent Alice/Bob profiles or password were installed for the user. First
+normal use asks the user to choose a password. The default source suite passed
+**43 tests** (16 integration skips at that point, before the additional opt-in PTY
+test was added). Seven new local message tests cover out-of-order static-key
+messages, Unicode/size bounds, standard Box interoperability, tampering, reflection,
+conversation-context mismatch, replay/conflicting IDs, restored history, failed
+snapshot rollback before ACK, and terminal-control escaping. These are not ratchet
+tests. Ruff lint/format, Bandit on source and shell syntax checks passed.
+
+The launcher uses locally provisioned standard NaCl Box payload keys; it does not
+implement the planned reviewed hybrid session establishment or ratchet. The new
+message/context envelope has no independent audit. Its results prove the stated
+test behavior on this router, not PFS/PCS/PQ properties or remote pairing security.
+Existing generated distributions predate these source changes; use the source
+checkout's `chat` launcher. There is no newly signed production release.
+
+## Requirements still unverified or unavailable
+
+- Remote E2E identity/contact authentication, reviewed messenger session protocol,
+  ML-KEM/hybrid KEX, PQXDH compatibility and PQ ratchets: not implemented. The local
+  two-terminal demo above has a deliberately different, narrower trust model.
 - Double Ratchet key updates, out-of-order/skipped-key bounds, application replay
-  attacks, PFS/PCS compromise/recovery and safe ratchet restoration: no tests or claims.
+  attacks against ratchets, PFS/PCS compromise/recovery and safe ratchet restoration:
+  no tests or claims. The demo's static-key replay tests are separate.
 - Whole-vault rollback, secure Python/SSD erasure, side-channel resistance and
   temporary device compromise recovery: not provided.
 - Deployed 3/4-certificate chains and all optional SMP commands: not verified.

@@ -1,8 +1,9 @@
 # Private Messenger — experimental independent SMP client
 
 Working Python 3.12+ source, independent of SimpleX Chat and its agent. **Milestone 1
-is implemented and verified against public routers. This is not yet a usable
-authenticated end-to-end messenger and is not production-ready.**
+is implemented and verified against public routers. A two-terminal text demo with
+local pairing is available; the general authenticated messenger is incomplete
+and is not production-ready.**
 
 The Python client speaks SMP directly over TCP/TLS (normally port 5223). It does
 not use WebSocket, a messaging engine, SimpleX CLI, an agent library, or an existing
@@ -27,17 +28,20 @@ user database. The upstream source was consulted as a wire-format reference only
   credentials on each connection. Test scope is in [VERIFICATION.md](VERIFICATION.md).
 - Multiple explicitly pinned router configurations, property tests, static checks,
   hashed dependency locks and release-manifest/signature tools.
+- Interactive Alice/Bob text demo on one computer, local out-of-band key
+  provisioning, standard PyNaCl Box payloads, encrypted history and authenticated
+  application-ID deduplication. This demo does not implement the planned session protocol.
 
 ## Explicitly unavailable
 
-Authenticated contact invitations, acceptance, verification, conversational E2E
-encryption, ML-KEM-768 hybrid key establishment, Double Ratchet, skipped keys,
-application replay protection, PFS/PCS between contacts, PQ ratcheting, conversation
+Authenticated remote contact invitations, acceptance, verification, the general
+conversational session protocol, ML-KEM-768 hybrid key establishment, Double Ratchet,
+skipped keys, PFS/PCS between contacts, PQ ratcheting, conversation
 queue rotation, redundant routing, delivery receipts and cover traffic are **not
 implemented**. MIXNET is blocked pending a real compatible adapter.
 
-The CLI gates messenger commands with a clear BLOCKED error. No static-key or
-homemade ratchet is substituted. See [MILESTONES.md](MILESTONES.md) and
+The main CLI gates messenger commands with a clear BLOCKED error. The separate
+local-pairing demo is not a substitute for those blocked milestones. See [MILESTONES.md](MILESTONES.md) and
 [SECURITY.md](SECURITY.md). SMP transport encryption is not conversational E2E
 security; a router knows its own transport and delivery-layer keys.
 
@@ -63,7 +67,38 @@ hashed lockfiles. The development session used `uv` with Python 3.12.7.
 implemented in Python. System-package version and security updates are part of
 the trusted platform, separately from Python lockfiles.
 
-## Real Alice/Bob transport demo
+## Interactive Alice/Bob: two terminals on this computer
+
+First terminal:
+
+```bash
+./chat Alice
+```
+
+Choose a password on first use and wait for `Příjem připraven`. Setup creates both
+local test profiles and secures both queues on the pinned Swiss Urban-Network SMP
+router. Then, in a second terminal in this directory:
+
+```bash
+./chat Bob
+```
+
+Enter the same test password. Type `Ahoj Bobe!` in Alice's terminal and press Enter;
+Bob sees `Alice: Ahoj Bobe!`. Bob can reply the same way. No send command or manual
+queue-address exchange is needed. `/history` shows recent history; `/quit` exits.
+Offline messages arrive when the recipient starts the same profile again.
+
+Profiles persist at `~/.local/share/private-messenger/terminal-demo/`, in separate
+encrypted vaults. No password file is created; existing non-demo profiles are
+untouched. Both demo vaults deliberately share the password chosen during setup.
+This flow is only for two terminals on one trusted computer. It locally provisions
+keys, uses the published [PyNaCl Box API](https://pynacl.readthedocs.io/en/latest/public/)
+for payload encryption, and does not implement remote contact authentication,
+hybrid key exchange, ratchets, PFS/PCS or post-quantum security. It uses DIRECT:
+the operator sees your IP and connection metadata. Successful SEND confirms only
+server acceptance; there are no recipient receipts. See [SECURITY.md](SECURITY.md).
+
+## Automated Alice/Bob transport demo
 
 On the configured development machine, a single command runs the Swiss-router
 test, prepares temporary Alice/Bob profiles and automatically fetches the
@@ -76,7 +111,7 @@ bash scripts/demo_swiss.sh
 It requires the already verified router certificate identity; a changed identity
 or an unexpected website redirect stops the test. It uses direct TLS and sends
 only encrypted random test payloads. Temporary profiles and queues are cleaned up.
-This remains an opaque transport test; there is no text-chat interface yet.
+This script remains an automated opaque transport test. Use `./chat` above for text.
 
 Czech walkthrough: [two separate clients](TEST_TWO_CLIENTS_CS.md) and
 [server selection / Iceland investigation](SERVER_SELECTION_CS.md).

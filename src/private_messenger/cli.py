@@ -24,6 +24,7 @@ CAPABILITIES = {
     "native_smp": "implemented: v11-v20, TLS pinning and channel binding",
     "queue_storage": "implemented: encrypted vault, durable storage before ACK, router-ID dedup",
     "end_to_end_messenger": "BLOCKED: reviewed authenticated hybrid session protocol required",
+    "local_terminal_demo": "separate ./chat launcher: local pairing and NaCl Box; no PFS/PCS/PQ",
     "double_ratchet": "BLOCKED: vetted implementation and security review required",
     "pq_ratchet": "BLOCKED: reviewed interoperable implementation required",
     "tor": "implemented: remote DNS, SOCKS isolation, no fallback; test scope in VERIFICATION.md",

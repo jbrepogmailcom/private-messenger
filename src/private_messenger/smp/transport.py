@@ -78,6 +78,12 @@ class TLSTransport:
             result.extend(data)
         return bytes(result)
 
+    def readable(self, timeout: float) -> bool:
+        """Wait for input without consuming block/chain state on an idle timeout."""
+        if timeout < 0:
+            raise ValueError("timeout must not be negative")
+        return bool(self.tls.pending() or select.select([self.socket], [], [], timeout)[0])
+
     def write_block(self, data: bytes) -> None:
         if len(data) != BLOCK_SIZE:
             raise ProtocolError("transport block must be exactly 16384 bytes")
