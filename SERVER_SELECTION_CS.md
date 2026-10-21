@@ -1,11 +1,81 @@
 # Výběr SMP serveru — ověření 21. 10. 2026
 
 Požadavek: nezávislá třetí strana, preference Islandu, mimo EU a USA.
+Po prověření Islandu byla jako praktická alternativa otestována švýcarská služba
+Urban-Network; její plné dvouprocesové demo prošlo.
 
 Odděluj adresu a otisk routeru, skutečnou dostupnost SMP, povolení vytvářet fronty,
 hostingovou společnost a totožnost/jurisdikci správce SMP. IP geolokace ani PONG
 samostatně všechny podmínky nepotvrzují. Katalog je zdroj kandidátů, nikoli důkaz
 důvěryhodnosti nebo fyzického umístění.
+
+## Funkční alternativa pro test — Urban-Network, Švýcarsko
+
+```text
+smp://LtowhzwGvh3lqlFvMqxCTPmZ_OzcwOq_NCsNG7ya1lc=@urban-network.dyndns.org:5224
+```
+
+Provozovatel publikuje úplnou SMP adresu, onion alternativu a heslo pro vytvoření
+fronty na [vlastní stránce služby](https://urban-network.ch/services/simplex).
+Pro náš klient je výše uvedená adresa normalizována na jeden hostname; heslo se
+předává odděleně pomocí `--basic-auth-file`. Otisk se nemění.
+
+Ověřeno naším nezávislým Python klientem: certifikát a TLS/SMP handshake, v18,
+NEW, SKEY, online přenos mezi dvěma procesy, offline doručení, redelivery po
+restartu, deduplikace, ACK, vyprázdnění fronty a DEL. Testovací fronta byla smazána.
+Veřejné heslo bylo použito jen při NEW a během testu uloženo v dočasném souboru
+0600; nikdy nebylo součástí argumentů procesu nebo publikovaného PMQ1 descriptoru.
+
+DNS při testu: `46.126.186.32`. [RIPE](https://rdap.db.ripe.net/ip/46.126.186.32)
+eviduje rozsah `CH-UPC-20100818`, zemi CH. Profil na
+[webu provozovatele](https://urban-network.ch/equipe) uvádí švýcarské Alpy/Léman.
+Jde o veřejné údaje provozovatele a registru, ne audit fyzické polohy, vlastnické
+struktury, právní identity nebo chování serveru. Přímé nezávislé srovnání celkové
+ochrany soukromí Švýcarska s Islandem nemáme.
+
+Švýcarský [dozorový úřad](https://www.edoeb.admin.ch/en/telecommunications-confidentiality-and-surveillance-of-telecommunications)
+popisuje ústavní ochranu soukromí a komunikace podle čl. 13 a současně zákonné
+pravomoci sledování komunikace. [Vládní zpráva z 11. 2. 2026](https://www.bazg.admin.ch/fr/newnsb/EXv-JkPBAZuL)
+uvádí přepracování návrhu souvisejících prováděcích předpisů a plán další
+konzultace; [parlamentní dotaz ze září 2026](https://ws-old.parlament.ch/affairs/20267879)
+se ptá na stav těchto prací. Netvrdíme obecnou imunitu před zákonným přístupem.
+
+Příprava souboru s heslem zveřejněným na stránce provozovatele:
+
+```bash
+.venv/bin/python - <<'PY'
+from getpass import getpass
+from pathlib import Path
+from private_messenger.storage.vault import atomic_write
+path = Path.home() / '.private-messenger-router-auth/urban-network.auth'
+atomic_write(path, getpass('Heslo pro NEW z webu Urban-Network: ').encode(), overwrite=False)
+print('Soubor 0600 vytvořen.')
+PY
+```
+
+Samostatný test dvou procesů, bez vytvoření trvalého uživatelského profilu:
+
+```bash
+bash scripts/demo_alice_bob.sh \
+  --server 'smp://LtowhzwGvh3lqlFvMqxCTPmZ_OzcwOq_NCsNG7ya1lc=@urban-network.dyndns.org:5224' \
+  --basic-auth-file "$HOME/.private-messenger-router-auth/urban-network.auth"
+```
+
+Pro ruční postup v dokumentu TEST_TWO_CLIENTS_CS.md nastav tento SMP_SERVER a
+Bobův příkaz pro vytvoření fronty rozšiř:
+
+```bash
+bob smp create od-alice "$SMP_SERVER" \
+  --basic-auth-file "$HOME/.private-messenger-router-auth/urban-network.auth"
+```
+
+Heslo pro NEW a heslo lokálního vaultu jsou různé věci. Alici se heslo pro NEW
+nepředává, pokud si na stejném serveru nevytváří vlastní přijímací frontu.
+
+Další prověřené alternativy: `simplex.notrustverify.ch` a `simplex.cercatrova.me`
+nedokončily spojení v limitu 6 s; norský `smp.borgen.org` prošel ověřením routeru
+a PING při v20, ale NEW bez hesla vrátil `ERR AUTH`. Nejde o důkaz trvalé
+nedostupnosti ostatních služeb.
 
 ## Nalezený islandský kandidát — zatím nepoužitelný bez autorizace
 
@@ -53,10 +123,12 @@ Příkazy předpokládají založený lokální profil a vyžádají si heslo va
 `servers` pouze eviduje seznam. Fronta používá server z explicitního argumentu
 `smp create`; již existující fronty se přidáním dalšího serveru nepřesunou.
 
-CLI této verze přijímá jeden hostname na adresu a nepodporuje vložení hesla pro
-NEW do serverové URI. Python API parametr `create_queue(basic_auth=...)` má.
-Bez získaného oprávnění a odpovídající podpory CLI nelze chráněný server používat
-pro plné dvouprocesové demo. Nejde o důvod vypnout ověřování routeru.
+CLI přijímá jeden hostname na adresu a nepodporuje vložení hesla pro NEW přímo do
+serverové URI. Heslo podporuje pomocí `--basic-auth-file PATH` u `smp create` i
+automatického dema. Soubor musí být běžný soubor 0600 vlastněný uživatelem, nesmí
+být symlink, heslo musí mít 1 až 255 bajtů. Ověření souboru proběhne před síťovým
+připojením. Python API podporuje `create_queue(basic_auth=...)` přímo.
+Neznámé heslo se neobchází a ověřování routeru se nevypíná.
 
 Postup pro oddělené klienty: [TEST_TWO_CLIENTS_CS.md](TEST_TWO_CLIENTS_CS.md).
 

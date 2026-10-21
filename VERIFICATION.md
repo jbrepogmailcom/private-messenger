@@ -113,6 +113,17 @@ distribution established. `dist/` is generated and excluded from Git.
 
 ## Requirements still unverified or unavailable
 
+Follow-up on the same date: a full two-process demo passed on the independent
+Urban-Network relay (`urban-network.dyndns.org:5224`, v18) using its operator's
+published queue-creation password. Online/offline delivery, redelivery/deduplication,
+ACK and cleanup passed. A narrow CLI/demo option loads router creation credentials
+from a private file, validates it before network contact and does not put the
+password in process arguments or invitations. The updated default suite passed
+**34 tests, 15 skipped**; Ruff and Bandit passed. The original public/local matrix
+results above remain historical runs of their stated source. Detailed geographic
+evidence and operator-trust limits are in SERVER_SELECTION_CS.md. The distributions
+described above predate this follow-up and do not include this CLI option.
+
 - E2E identity/contact authentication, bidirectional conversational encryption,
   ML-KEM/hybrid KEX, PQXDH compatibility and PQ ratchets: not implemented.
 - Double Ratchet key updates, out-of-order/skipped-key bounds, application replay

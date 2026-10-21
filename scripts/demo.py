@@ -19,7 +19,7 @@ from private_messenger.crypto import smp_box
 from private_messenger.smp.framing import pad
 
 
-def demo(server: str) -> dict:
+def demo(server: str, basic_auth_file: Path | None = None) -> dict:
     summary = {
         "server": server,
         "infrastructure": "real; classification supplied by caller",
@@ -61,7 +61,12 @@ def demo(server: str) -> dict:
 
         run("Alice", "register", "Alice")
         run("Bob", "register", "Bob")
-        created = run("Bob", "smp", "create", "incoming", server)
+        extra = (
+            ["--basic-auth-file", str(basic_auth_file.resolve())]
+            if basic_auth_file is not None
+            else []
+        )
+        created = run("Bob", "smp", "create", "incoming", server, *extra)
         summary["negotiated_smp_version"] = created["version"]
         try:
             address = run("Bob", "smp", "address", "incoming")["address"]
@@ -120,5 +125,10 @@ def demo(server: str) -> dict:
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--server", required=True, help="pinned smp://identity@host[:port]")
+    p.add_argument(
+        "--basic-auth-file",
+        type=Path,
+        help="0600 router queue-creation password file; never passed as argv text",
+    )
     args = p.parse_args()
-    print(json.dumps(demo(args.server), indent=2))
+    print(json.dumps(demo(args.server, args.basic_auth_file), indent=2))

@@ -124,7 +124,7 @@ Use `private-messenger smp --help`. Supported commands:
 
 ```text
 smp ping SERVER
-smp create NAME SERVER
+smp create NAME SERVER [--basic-auth-file PATH]
 smp address NAME
 smp secure SENDER_NAME PMQ1_DESCRIPTOR
 smp send SENDER_NAME CIPHERTEXT_FILE
@@ -140,6 +140,12 @@ A successful SEND means **server acceptance**, not confirmed recipient delivery.
 Unknown acceptance is persisted and automatic retries of identical ciphertext
 are refused. No authenticated recipient receipts exist yet. Duplicate detection
 uses router IDs and therefore does not defeat malicious republishing with new IDs.
+
+Routers requiring a password for NEW can use `--basic-auth-file PATH`, a user-owned
+0600 file. Only its filename appears in process arguments; the password is sent
+inside the pinned encrypted SMP connection for NEW, never in invitations or sender
+commands, and is not copied into queue state. The same flag is accepted by the
+Alice/Bob demo. This router password is separate from the local vault passphrase.
 
 The diagnostic `subscribe` receives one delivery; callers of the Python API can
 continue receiving and ACKing. GET and SUB cannot be mixed on one queue connection.

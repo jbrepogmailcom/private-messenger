@@ -65,6 +65,11 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("name")
     create.add_argument("server")
     create.add_argument(
+        "--basic-auth-file",
+        type=Path,
+        help="user-owned 0600 file with the router's queue-creation password",
+    )
+    create.add_argument(
         "--legacy-security",
         action="store_true",
         help="recipient KEY instead of sender SKEY; use Python API to set key",
@@ -141,8 +146,16 @@ def smp_command(args, vault: Vault) -> None:
         if vault.get("queue:" + args.name):
             raise ValueError("queue name already exists")
         server = Server.parse(args.server)
+        basic_auth = None
+        if args.basic_auth_file is not None:
+            basic_auth = read_private(args.basic_auth_file, 257).rstrip(b"\r\n")
+            if not 1 <= len(basic_auth) <= 255:
+                raise ValueError("router password must contain 1..255 bytes")
         with Client(server, network(vault)) as client:
-            queue = client.create_queue(sender_can_secure=not args.legacy_security)
+            queue = client.create_queue(
+                sender_can_secure=not args.legacy_security,
+                basic_auth=basic_auth,
+            )
             try:
                 vault.put("queue:" + args.name, {"server": server.uri, "queue": queue.export()})
             except BaseException:

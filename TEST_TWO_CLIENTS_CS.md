@@ -26,6 +26,9 @@ SMP_SERVER='smp://u2dS9sG8nMNURyZwqASV4yROM28Er0luVTx5X1CsMrU=@smp4.simplex.im'
 Pro islandský nebo jiný server změň hodnotu této proměnné na jeho skutečnou,
 důvěryhodně získanou adresu. Samotné přidání příkazem `servers` nastavuje seznam;
 server pro novou frontu se vybírá explicitně příkazem `smp create`.
+Funkční švýcarská alternativa Urban-Network a postup pro její zveřejněné heslo
+jsou v [SERVER_SELECTION_CS.md](SERVER_SELECTION_CS.md). U chráněného serveru
+přidej `--basic-auth-file PATH` k Bobovu `smp create` i k automatickému demu.
 
 ## 2. Terminál B — Bob, příjemce
 
