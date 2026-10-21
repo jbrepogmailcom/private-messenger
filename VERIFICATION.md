@@ -36,6 +36,11 @@ authentication, application AEAD headers or a ratchet. Router acceptance is not 
 recipient receipt. Published payload digests/queue credentials are intentionally
 omitted from this report.
 
+The standalone two-process online/offline/redelivery demo also passed against a
+second actual public router, `smp5.simplex.im`, pinned to
+`hpq7_4gGJiilmz5Rf-CswuU5kZGkm_zOIooSw6yALRg=`, negotiating v20. Its temporary
+queue was deleted. The version-matrix pytest run was on smp4 only.
+
 ## Unmodified local reference server
 
 Official release asset `smp-server-ubuntu-24_04-x86-64`, tag `v6.5.0`;
@@ -85,9 +90,26 @@ they are not exhaustive formal verification or sustained fuzzing.
 Ruff lint/format and Bandit on application source passed. Runtime and development
 pip-audit scans found no known vulnerabilities on the test date. The first build
 audit found `PYSEC-2026-3447` in setuptools 82.0.1; the backend and build lock were
-updated to patched setuptools 84.2.1 (wheel 0.48.0) and rescanned. See the final build
-record for reproducibility scope. No OS/native-package vulnerability scan or
+updated to patched setuptools 84.2.1 (wheel 0.48.0); its final scan found no known
+vulnerabilities either. No OS/native-package vulnerability scan or
 independent code audit is implied.
+
+## Built distributions
+
+Source commit `1385d85` produced a wheel and sdist in `dist/`. A second wheel build
+from a fresh `git archive` directory using the same pinned tools, Python 3.12 and
+SOURCE_DATE_EPOCH was byte-identical. Both wheel SHA-256 values:
+`0ee9eaa0fa1eeb0cb97b0dad7481d19bef24a216b76eb5873d62ad937643da68`.
+This verifies reproducibility on this machine with these inputs, not independent
+multi-party reproducibility. The sdist was built but not reproducibility-compared.
+
+The wheel was installed with hash-verified runtime dependencies in a separate
+clean Python 3.13 environment; register, identity and status passed. The full test
+suite and network integrations used Python 3.12. A canonical source/artifact
+manifest and throwaway-key development signature were generated and verified.
+The development public key proves no publisher identity and is explicitly labeled
+untrusted for updates. No release private key was retained or production key
+distribution established. `dist/` is generated and excluded from Git.
 
 ## Requirements still unverified or unavailable
 
