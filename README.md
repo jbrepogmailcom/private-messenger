@@ -65,6 +65,9 @@ the trusted platform, separately from Python lockfiles.
 
 ## Real Alice/Bob transport demo
 
+Czech walkthrough: [two separate clients](TEST_TWO_CLIENTS_CS.md) and
+[server selection / Iceland investigation](SERVER_SELECTION_CS.md).
+
 ```bash
 bash scripts/demo_alice_bob.sh --server \
   'smp://u2dS9sG8nMNURyZwqASV4yROM28Er0luVTx5X1CsMrU=@smp4.simplex.im'
