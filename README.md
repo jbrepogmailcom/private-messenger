@@ -1,4 +1,4 @@
-# Private Messenger 0.2.2 — independent experimental SMP messenger
+# Private Messenger 0.2.3 — independent experimental SMP messenger
 
 Python 3.12+ speaks SMP directly to unmodified public routers, over **TCP/TLS, not
 WebSocket**. No SimpleX Chat engine, CLI, agent, database or Signal messaging
@@ -25,8 +25,8 @@ On Bob's terminal:
 
 Choose Bob's own password. The launcher starts Tor and waits for `Tor: 100%`
 before connecting to SMP. The `tqdm` progress bar updates on one terminal line.
-Enter `address`, then send the returned **whole PMS2: invitation** to Alice through
-an independently trusted channel. Names are local labels, not server-side addresses.
+Enter `/address`, then send the returned **whole `/add Bob PMS2:…` command** to Alice
+through an independently trusted channel. Names are local labels, not server-side addresses.
 
 On Alice's terminal, independently:
 
@@ -34,30 +34,45 @@ On Alice's terminal, independently:
 ./chat Alice
 ```
 
-Choose Alice's own password, paste Bob's invitation and press Enter. You can also
-paste the complete JSON export, with or without a leading `connect`. Bob sees a
-request and types `accept`. Both type `verify`, compare the entire displayed
+Choose Alice's own password, paste the generated `/add Bob PMS2:…` command and
+press Enter. `/add PMS2:…` and `/add {"invitation": "PMS2:…", …}` are also accepted;
+`/connect` remains an alias. Bob sees a request and types `/accept`.
+Both type `/verify`, compare the entire displayed
 fingerprint in person or over another authenticated channel, and only when it
 matches, each types:
 
 ```text
-ano
+/ano
 ```
 
 Alice can now type `Ahoj Bobe!`; Bob sees it and can reply by typing text. With
-multiple contacts use `chat Bob` to select a conversation, or `send Bob TEXT`.
-`contacts` lists names and pairing status; `history` shows the selected conversation.
-Names must be unique; ambiguous names require an explicit contact ID. On restart,
-a single existing contact is selected automatically. `quit` exits.
+multiple contacts use `/chat` or `/contacts` to see a numbered list, then `/chat 2`
+to select its second contact. `/chat Bob` selects a unique name; `/send Bob TEXT`
+sends explicitly. `/history` shows the selected conversation. Ambiguous names
+require selecting a displayed number or an explicit ID. Menu numbers refer to the
+last displayed list, so new incoming requests cannot silently renumber that list.
+On restart a single existing contact is selected automatically. `/quit` exits.
 The chat explains whether acceptance or verification is still missing.
 `server_accepted` is distinct from the encrypted `recipient_received`
 receipt. These receipts confirm application processing, not that a human read it.
 Offline messages wait at the router while its retention/quota permits.
 
 The one-shot CLI still supports `verify ID --confirm FINGERPRINT` for scripts.
-The guided `ano` confirmation is available after displaying `verify` in a terminal;
+All **in-chat commands require a leading `/`**, including `/ano` and `/ne` for
+verification. Ordinary text is a message, even if it is the word `help` or `quit`.
+Unknown slash commands never become messages. Pasted invitations, JSON invitation
+exports and long Base32 fragments are blocked from messages and direct the user
+to `/add`, preventing accidental forwarding to the selected contact.
+
+The guided `/ano` confirmation is available after displaying `/verify`;
 changing conversations cancels that confirmation. It never bypasses fingerprint
 comparison or automatically trusts an invitation's self-signature.
+
+To add Charlie while Alice already chats with Bob, Charlie runs `./chat Charlie`
+and `/address`. Alice pastes Charlie's generated `/add Charlie PMS2:…` command;
+Charlie accepts with `/accept`; both compare `/verify` and confirm with `/ano`.
+Alice can then switch between Bob and Charlie using the numbered `/chat` list.
+Each contact has its own encrypted conversation.
 
 [Podrobný český návod](TEST_TWO_CLIENTS_CS.md). Each profile is created separately
 in `~/.local/share/private-messenger/secure-profiles/`; passwords need not match.

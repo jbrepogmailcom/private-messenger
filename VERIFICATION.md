@@ -416,3 +416,58 @@ check verified carriage-return redraws, one final newline, a partial bar on fail
 and idempotent close. Redirected output retains ordinary event lines. Runtime and
 development dependency scans found no known vulnerabilities. Native primitives,
 ratchet composition and their documented security limitations are unchanged.
+
+## Slash commands and multiple contacts — 0.2.3, 2026-10-22
+
+All interactive chat commands now require `/`, including `/quit`, `/verify` and
+the explicit fingerprint confirmation `/ano` or rejection `/ne`. Bare words such
+as `help`, `verify` and `quit` are ordinary message content. Unknown slash commands
+fail instead of becoming messages. The separate one-shot shell CLI is unchanged.
+
+`/address` generates a complete `/add NAME PMS2:…` command ready to copy into the
+peer's terminal. `/add KÓD`, `/add NAME KÓD`, `/add JSON_EXPORT` and the existing
+`/connect` alias initiate an independently keyed contact without sending the code
+to the selected conversation. A guard blocks invitation markers/JSON exports and
+long Base32 fragments before message encryption/history/outbox insertion, including
+the reported `nový kontakt KÓD` mistake and accidental `/send Bob KÓD`.
+
+`/chat` and `/contacts` display numbered saved contacts, excluding unused local
+invitations. `/chat NUMBER`, `/chat NAME` and `/chat ID` select the recipient shown
+in the prompt. Number-to-contact mappings are frozen to the displayed list;
+new incoming contacts cannot silently shift the meaning of `/chat 2`. Showing a
+new list refreshes the mapping. Duplicate names still require an unambiguous
+number or ID. Acceptance and fingerprint verification remain mandatory.
+
+Actual public Urban-Network SMP over real Tor: **2 passed in 90.53s**:
+
+- `test_three_real_terminals_add_contact_choose_recipient_offline_restart` runs
+  Alice, Bob and Charlie in three independent Python processes attached to real
+  pseudo-terminals. After authenticated Alice/Bob pairing and bidirectional text,
+  Charlie generates `/address`. Alice's reported bare `nový kontakt KÓD` input is
+  blocked while Bob is selected, and the actual generated `/add Charlie …`
+  command initiates a separate conversation. The test compares complete native
+  fingerprints independently before `/ano`. `/contacts` lists Bob and Charlie;
+  `/chat 1` and `/chat 2` update the prompt and deliver separate messages only to
+  their intended recipient. Charlie replies; his history contains exactly his
+  one intended incoming message; Bob's contains his three intended messages,
+  including offline delivery after Bob and Alice exit/restart. Charlie's invitation
+  is absent from Bob's output. No mocked network or cryptographic backend is used.
+- `test_secure_remote_pairing_online_offline_restart_and_replay[TOR]` passes
+  with slash-prefixed machine-readable commands, including whole-JSON invitation
+  import, delayed verification, receipt/resubscription, restart and replay checks.
+
+Clients used a configured external SOCKS port backed by the test's own actual
+installed Tor. It reached 100% bootstrap; all SMP/injection/cleanup connections
+used TOR with per-connection isolation, without DIRECT fallback. Temporary queues
+were deleted, profiles discarded and that test-owned Tor stopped. User profiles
+were not opened. This does not add evidence about global traffic correlation or
+guarantee future Tor bootstrap speed.
+
+Default checks: **91 passed, 21 skipped in 74.31s**, Ruff lint/format and Bandit
+passed; runtime pip-audit found no known vulnerabilities. Application fixtures
+use real native cryptography and encrypted vaults with an explicitly mock relay.
+New assertions cover strict slash parsing versus plain words, adding Charlie
+while Bob is selected, rejected invitation pastes without side effects, duplicate
+invitation guidance, frozen menu numbers after another stored contact appears,
+out-of-range selection, and distinct per-contact message histories. These fixtures
+are separate from the actual three-terminal public-infrastructure run above.

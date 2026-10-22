@@ -33,9 +33,16 @@ are not router registration fields. Initial requests contain encrypted display
 names before manual fingerprint verification, so trust invitation delivery too.
 
 The terminal's guided verification displays the complete fingerprint and accepts
-an explicit `ano` only for that displayed contact and unchanged fingerprint.
-Selecting another conversation cancels the prompt. A unique name or local ID
-selects a contact; duplicate names fail closed. A copied JSON invitation export
+an explicit `/ano` only for that displayed contact and unchanged fingerprint.
+Selecting another conversation cancels the prompt. A unique name, local ID or
+number from the last displayed menu selects a contact; duplicate names fail closed.
+Number-to-ID mappings are frozen until another list is displayed, so a concurrent
+incoming contact cannot change the recipient of `/chat 2`. Every chat command
+requires `/`; unknown slash commands never become messages. An outbound-message
+guard rejects invitation markers, invitation exports and long Base32 fragments
+before encryption/history/outbox insertion, directing users to `/add` instead.
+This prevents the reported accidental forwarding, not deliberate disclosure or
+arbitrary secret detection. A copied JSON invitation export
 does not supply trusted metadata: only its signed PMS2 content is used. These UI
 rules do not authenticate a human automatically; users must compare fingerprints
 through an independently trusted channel. Blindly confirming defeats that check.

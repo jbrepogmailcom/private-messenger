@@ -125,7 +125,7 @@ def test_remote_invitation_acceptance_unicode_and_authenticated_receipt(applicat
 
 
 @pytest.mark.parametrize(
-    "form", ["json_command", "json_paste", "quoted_json", "token", "token_command"]
+    "form", ["json_command", "json_paste", "quoted_json", "token", "token_command", "add", "named"]
 )
 def test_copied_invitation_export_connects_without_trusting_outer_metadata(application_pair, form):
     from private_messenger.cli import parser
@@ -141,6 +141,8 @@ def test_copied_invitation_export_connects_without_trusting_outer_metadata(appli
         "quoted_json": "connect '" + raw + "' --name Bob",
         "token": exported["invitation"],
         "token_command": "connect " + exported["invitation"],
+        "add": "/add " + raw + " --name Bob",
+        "named": "/add Bob " + exported["invitation"],
     }[form]
     args = parser().parse_args(chat_words(line))
     aid = alice.connect(args.invitation, args.name)
@@ -178,33 +180,33 @@ def test_guided_chat_pairing_verification_and_plain_text_without_internal_ids(ap
     resumed = []
     a = ChatUI(alice, alice_output.append)
     b = ChatUI(bob, bob_output.append, on_verified=resumed.append)
-    b.handle("address")
-    invitation = bob_output[-1]
-    assert invitation.startswith("PMS2:")
-    a.handle(invitation)
+    b.handle("/address")
+    invitation_command = bob_output[-1]
+    assert invitation_command.startswith("/add Bob PMS2:")
+    a.handle(invitation_command)
     aid = a.selected
     bid = bob.all_contacts()[0]["id"]
     a.handle("Ahoj")
     assert alice.history(aid) == []
     assert "accept" in alice_output[-1]
     b.received(bid, deliver(bob, bid)[1])
-    b.handle("accept")
+    b.handle("/accept")
     a.received(aid, deliver(alice, aid)[1])
     assert a.label(aid) == "Bob"
     assert b.label(bid) == "Alice"
-    b.handle("accept")  # An already accepted contact gives guidance, without another packet.
+    b.handle("/accept")  # An already accepted contact gives guidance, without another packet.
     assert "verify" in bob_output[-1]
     a.handle("Ahoj")
     assert alice.history(aid) == []
     assert "verify" in alice_output[-1]
-    a.handle("verify Bob")
-    b.handle("verify")
+    a.handle("/verify Bob")
+    b.handle("/verify")
     assert a.pending_verification[1] == b.pending_verification[1]
-    a.handle("ne")
+    a.handle("/ne")
     assert not alice.contact(aid)["verified"]
-    a.handle("verify")
-    a.handle("ano")
-    b.handle("ano")
+    a.handle("/verify")
+    a.handle("/ano")
+    b.handle("/ano")
     assert alice.contact(aid)["verified"] and bob.contact(bid)["verified"]
     assert resumed == [bid]
     text = "Ahoj Bobe! \"Uvozovka a apostrof nejsou problém: don't 🐴"
@@ -240,16 +242,17 @@ def test_chat_rejects_ambiguous_names_and_does_not_retarget_verification(applica
         put_contact(db, duplicate)
     ui = ChatUI(alice, lambda text: None)
     with pytest.raises(ValueError, match="konkrétní kontakt"):
-        ui.handle("verify Bob")
+        ui.handle("/verify Bob")
     with pytest.raises(ValueError, match="konkrétní kontakt"):
-        ui.handle("accept Bob")
+        ui.handle("/accept Bob")
     with pytest.raises(ValueError, match="konkrétní kontakt"):
         ui.handle("Ahoj")
-    ui.handle("verify " + aid)
-    ui.handle("chat " + duplicate["id"])
+    ui.handle("/verify " + aid)
+    ui.handle("/chat " + duplicate["id"])
     assert ui.pending_verification is None
     # A stale 'ano' after selecting someone else cannot verify either contact.
-    ui.handle("ano")
+    with pytest.raises(ValueError, match="/verify"):
+        ui.handle("/ano")
     assert not alice.contact(aid)["verified"]
     assert not alice.contact(duplicate["id"])["verified"]
     assert alice.history(aid) == []
@@ -261,10 +264,100 @@ def test_chat_parser_errors_are_short_and_damaged_exports_are_never_sent(applica
     aid, _ = connect(application_pair)
     ui = ChatUI(alice, lambda text: None)
     with pytest.raises(ValueError):
-        ui.handle('{"invitation": "PMS2:TRUNCATED"')
+        ui.handle('/add {"invitation": "PMS2:TRUNCATED"')
     with pytest.raises(ValueError, match="Nápověda"):
-        ui.handle("send")
+        ui.handle("/send")
     assert alice.history(aid) == []
+
+
+def test_slash_commands_and_plain_words_have_distinct_meanings(application_pair):
+    alice, _, _, _, _ = application_pair
+    aid, _ = connect(application_pair)
+    ui = ChatUI(alice, lambda text: None)
+    # Even words which name commands are ordinary messages without a leading slash.
+    for word in ("help", "contacts", "verify", "quit", "ano"):
+        assert ui.handle(word) is True
+    assert [item["body"] for item in alice.history(aid)] == [
+        "help",
+        "contacts",
+        "verify",
+        "quit",
+        "ano",
+    ]
+    before = alice.history(aid)
+    with pytest.raises(ValueError, match="/help"):
+        ui.handle("/unknown-command")
+    assert alice.history(aid) == before
+    assert ui.handle("/quit") is False
+
+
+def test_add_charlie_while_bob_is_selected_and_choose_from_saved_contacts(
+    application_pair, tmp_path
+):
+    alice, bob, queues, deliver, _ = application_pair
+    aid, _ = connect(application_pair)
+    output = []
+    a = ChatUI(alice, output.append)
+    assert a.selected == aid
+    with Vault(tmp_path / "charlie.vault", "Charlie's own password", create=True) as vault:
+        register(vault, "Charlie")
+        vault.put("servers", alice.vault.get("servers"))
+        with Messenger(vault) as charlie:
+            c = ChatUI(charlie, lambda text: None)
+            invitation = charlie.address()
+            queue_count = len(queues)
+            # Reproduce the reported accidental forwarding, also guarding fragments and exports.
+            for text in (
+                "nový kontakt " + invitation["invitation"],
+                invitation["invitation"],
+                json.dumps(invitation),
+                invitation["invitation"][5:],
+                "/send Bob " + invitation["invitation"],
+            ):
+                with pytest.raises(ValueError, match="/add"):
+                    a.handle(text)
+                assert alice.history(aid) == []
+                assert a.selected == aid
+                assert len(queues) == queue_count
+            a.handle("/add Charlie " + invitation["invitation"])
+            cid = a.selected
+            assert cid != aid
+            assert alice.contact(cid)["name"] == "Charlie"
+            assert not alice.contact(cid)["verified"]
+            with pytest.raises(ValueError, match="/chat"):
+                a.handle("/add " + invitation["invitation"])
+            c.received(invitation["id"], deliver(charlie, invitation["id"])[1])
+            c.handle("/accept")
+            a.received(cid, deliver(alice, cid)[1])
+            for ui in (a, c):
+                ui.handle("/verify")
+            assert a.pending_verification[1] == c.pending_verification[1]
+            for ui in (a, c):
+                ui.handle("/ano")
+            a.handle("/chat")
+            assert a.contact_choices == (aid, cid)
+            assert any("1. Bob" in line for line in output)
+            assert any("2. Charlie" in line for line in output)
+            # Another stored contact appears after the menu, without renumbering that menu.
+            other = bob.address()
+            alice.connect(other["invitation"], "Aaron")
+            a.handle("/chat 2")
+            assert a.selected == cid
+            a.handle("Ahoj Charlie, pouze pro tebe")
+            while (event := deliver(charlie, invitation["id"])[1])["event"] != "text":
+                assert event["event"] == "receipt"
+            assert event["body"] == "Ahoj Charlie, pouze pro tebe"
+            assert alice.history(aid) == []
+            with pytest.raises(ValueError, match="číslo"):
+                a.handle("/chat 99")
+            assert a.selected == cid
+            a.handle("/contacts")
+            assert a.contact_choices[1:] == (aid, cid)
+            a.handle("/chat 2")
+            assert a.selected == aid
+            a.handle("Ahoj Bobe, vybral jsem tě ze seznamu")
+            assert alice.history(aid)[0]["body"] == "Ahoj Bobe, vybral jsem tě ze seznamu"
+            assert len(alice.history(cid)) == 1
 
 
 def test_replay_new_router_id_does_not_advance_ratchet_or_duplicate_history(application_pair):

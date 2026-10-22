@@ -60,7 +60,7 @@ def keyboard(events, stop) -> None:
     while not stop.is_set():
         line = sys.stdin.readline(16386)
         if not line:
-            post(events, stop, ("input", "quit"))
+            post(events, stop, ("input", "/quit"))
             return
         if len(line) > 16384:
             while line and not line.endswith("\n"):
@@ -171,7 +171,7 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                         if is_tty and contact["state"] == "active" and not contact["verified"]:
                             say(
                                 f"{ui.label(cid)}: zpráva čeká na ověření. "
-                                f"Napiš verify {cid} a porovnej otisk."
+                                f"Napiš /verify {cid} a porovnej otisk."
                             )
                         else:
                             say(
