@@ -270,7 +270,7 @@ current serialized snapshot, not physical media/memory erasure.
 A local benchmark (`scripts/bench_crypto.py`, 160 rounds, 320 messages, 256-byte
 payload) measured packet size min 366, max 2054, mean 399.94 bytes **including the
 37-byte app header, excluding SMP's fixed 16-KiB framing**. Median encrypt/decrypt
-3.777/4.182 ms includes JSON binding/state serialization, excludes vault KDF/I/O
+5.735/6.357 ms includes JSON binding/state serialization, excludes vault KDF/I/O
 and network. Hardware/environment dependent development sample, not a throughput
 or latency guarantee. Native status showed session v4 and SPQR v1 negotiated,
 Alice epoch4/send3, Bob epoch3/send3.
@@ -310,3 +310,10 @@ fingerprint; Bob rejects without ACK/history insertion, then his explicit valid
 verification resumes the queued ciphertext and delivers it without restarting.
 TOR evidence above predates this additional UI recovery assertion; it retains
 its stated successful online/offline/receipt/replay scope.
+
+Build/verification scripts now explicitly select the Rust channel from the native
+toolchain file and reject a mismatched compiler even when invoked from the project
+root. Rebuild, fmt/clippy, SPQR test and audit passed with that enforcement. The
+platform wheel also passed an import smoke test from its extracted contents,
+independently of the editable source import. The final benchmark above was rerun
+on the zeroizing 0.30.1 binding; its timings are environment-dependent.

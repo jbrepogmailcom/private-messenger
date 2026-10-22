@@ -9,6 +9,12 @@ fi
 if [[ -x .work-crypto/toolchain/protoc/bin/protoc ]]; then
   export PROTOC="$PWD/.work-crypto/toolchain/protoc/bin/protoc"
 fi
+RUSTUP_TOOLCHAIN=$(.venv/bin/python -c 'import tomllib; print(tomllib.load(open("native/rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+export RUSTUP_TOOLCHAIN
+if [[ "$(rustc --version)" != "rustc $RUSTUP_TOOLCHAIN "* ]]; then
+  printf 'Pinned Rust toolchain required: %s\n' "$RUSTUP_TOOLCHAIN" >&2
+  exit 1
+fi
 export PYO3_PYTHON="$PWD/.venv/bin/python"
 cargo build --release --locked --manifest-path native/Cargo.toml
 .venv/bin/python - <<'PY'
