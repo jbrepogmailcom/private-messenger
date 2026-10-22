@@ -26,7 +26,7 @@ from private_messenger.storage.vault import Vault, atomic_write, read_private
 
 
 class Process:
-    def __init__(self, name, directory, password_file):
+    def __init__(self, name, directory, password_file, mode="TOR"):
         self.p = subprocess.Popen(  # noqa: S603 -- fixed Python, no shell
             [
                 str(Path(__file__).parents[2] / "chat"),
@@ -35,6 +35,7 @@ class Process:
                 str(directory),
                 "--passphrase-file",
                 str(password_file),
+                *(["--network", "DIRECT"] if mode == "DIRECT" else []),
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -89,14 +90,18 @@ class Process:
 
 
 @pytest.mark.public
-@pytest.mark.parametrize("mode", ["DIRECT", "TOR"])
+@pytest.mark.parametrize("mode", ["DIRECT", "TOR", "MANAGED_TOR"])
 def test_secure_remote_pairing_online_offline_restart_and_replay(tmp_path, mode):
     if os.environ.get("PM_PUBLIC_SECURE_MESSENGER") != "1":
         pytest.skip("set PM_PUBLIC_SECURE_MESSENGER=1 for the real Swiss SMP candidate test")
     proxy_port = os.environ.get("PM_SECURE_TOR_PORT")
-    if mode == "TOR" and not proxy_port:
+    if mode in ("TOR", "MANAGED_TOR") and not proxy_port:
         pytest.skip("real running Tor SOCKS proxy required: PM_SECURE_TOR_PORT")
-    network = Network(mode=mode, proxy_port=int(proxy_port or 9050), timeout=30)
+    network = Network(
+        mode="TOR" if mode == "MANAGED_TOR" else mode,
+        proxy_port=int(proxy_port or 9050),
+        timeout=30,
+    )
     passwords = {name: secrets.token_urlsafe(32) for name in ("Alice", "Bob")}
     directories = {name: tmp_path / name for name in passwords}
     files = {}
@@ -105,7 +110,7 @@ def test_secure_remote_pairing_online_offline_restart_and_replay(tmp_path, mode)
         files[name] = tmp_path / f"{name}.password"
         atomic_write(files[name], password.encode(), overwrite=False)
         auth_file = os.environ.get("PM_ROUTER_AUTH_FILE")
-        if mode == "TOR" or auth_file:
+        if mode in ("TOR", "MANAGED_TOR") or auth_file:
             with Vault(directories[name] / f"{name.lower()}.vault", password, create=True) as vault:
                 register(vault, name)
                 if auth_file:
@@ -114,18 +119,21 @@ def test_secure_remote_pairing_online_offline_restart_and_replay(tmp_path, mode)
                     vault.put("router-auth:" + Server.parse(SERVER).uri, b64(password))
                 vault.put(
                     "network",
-                    {
+                    {"mode": "DIRECT"}
+                    if mode == "MANAGED_TOR"
+                    else {
                         "mode": mode,
                         "proxy_host": "127.0.0.1",
-                        "proxy_port": int(proxy_port),
+                        "proxy_port": int(proxy_port or 9050),
                         "timeout": 30,
                     },
                 )
 
     def start(name):
-        client = Process(name, directories[name], files[name])
+        client = Process(name, directories[name], files[name], mode)
         clients.append(client)
-        client.text("Přihlášen(a): " + name)
+        client.text("Přihlášen(a): " + name, timeout=240)
+        client.text("síť: " + ("DIRECT" if mode == "DIRECT" else "TOR"))
         return client
 
     def profile(name):
@@ -191,6 +199,9 @@ def test_secure_remote_pairing_online_offline_restart_and_replay(tmp_path, mode)
             assert vault.db.execute(
                 "SELECT count(*) FROM messages WHERE direction='in'"
             ).fetchone() == (3,)
+            if mode == "MANAGED_TOR":
+                assert vault.get("network") == {"mode": "TOR"}
+                assert vault.get("tor_guard_state")
         with Vault(profile("Alice"), passwords["Alice"]) as vault:
             assert vault.db.execute(
                 "SELECT count(*) FROM messages WHERE status='recipient_received'"

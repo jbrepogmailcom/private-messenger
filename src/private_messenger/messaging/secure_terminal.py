@@ -20,6 +20,7 @@ from private_messenger.crypto.backend import SUITE, CryptoUnavailable, operation
 from private_messenger.identity import register
 from private_messenger.messaging.receiver import post, subscribe
 from private_messenger.messaging.service import Messenger
+from private_messenger.networking.tor import configure_chat, messaging_network
 from private_messenger.storage.vault import Vault, read_private
 
 
@@ -43,8 +44,12 @@ def keyboard(events, stop) -> None:
             post(events, stop, ("input", line.rstrip("\r\n")))
 
 
-def run_shell(vault: Vault, interactive=True) -> int:
+def run_shell(vault: Vault, interactive=True, network=None) -> int:
     from private_messenger.cli import execute, parser
+
+    if network is None:
+        with messaging_network(vault, progress=lambda text: print(text, flush=True)) as route:
+            return run_shell(vault, interactive, route)
 
     events = queue.Queue(maxsize=64)
     workers = {}
@@ -61,7 +66,7 @@ def run_shell(vault: Vault, interactive=True) -> int:
         if is_tty:
             print(f"{safe(name)}> ", end="", flush=True)
 
-    with Messenger(vault) as messenger:
+    with Messenger(vault, network=network) as messenger:
         if interactive:
             print(
                 f"Přihlášen(a): {safe(name)} · experimentální verze bez nezávislého auditu.",
@@ -232,6 +237,14 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--passphrase-file", type=Path)
     parser.add_argument(
+        "--network",
+        choices=["TOR", "DIRECT"],
+        default="TOR",
+        help="výchozí TOR; DIRECT je výslovný režim odhalující IP routeru",
+    )
+    parser.add_argument("--tor-proxy-host", help="IP vlastní Tor SOCKS proxy")
+    parser.add_argument("--tor-proxy-port", type=int, help="port vlastní Tor SOCKS proxy")
+    parser.add_argument(
         "--address", action="store_true", help="vytvoř jednorázovou pozvánku a skonči"
     )
     args = parser.parse_args(argv)
@@ -251,8 +264,12 @@ def main(argv=None) -> int:
             secret = None
             if new:
                 register(vault, args.name)
+            configure_chat(vault, args.network, args.tor_proxy_host, args.tor_proxy_port)
             if args.address:
-                with Messenger(vault) as messenger:
+                with (
+                    messaging_network(vault) as route,
+                    Messenger(vault, network=route) as messenger,
+                ):
                     print(json.dumps(messenger.address()), flush=True)
                 return 0
             return run_shell(vault)

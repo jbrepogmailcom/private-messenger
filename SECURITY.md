@@ -80,8 +80,18 @@ SKEY does not itself authenticate a person or prevent a leaked-invitation race.
 
 DIRECT exposes source IP. TOR uses SOCKS5 remote DNS, literal proxy IP, new auth
 credentials per connection and no DIRECT fallback. Isolation requires the proxy's
-IsolateSOCKSAuth. Default operator HTTPS discovery also follows configured TOR;
-its antibot page may require credentials obtained independently. Queue connections
+IsolateSOCKSAuth. Chat now defaults to TOR even for older DIRECT profiles. It
+starts an owned Tor with isolation enabled unless an external proxy is configured.
+No system Tor configuration is changed. Bootstrap failure is fatal before SMP.
+Owned Tor runtime files use a private RAM directory; its guard state is stored in
+the encrypted profile on clean exit and restored on the next start. This helps
+retain guards across ordinary restarts; a crash can lose newer guard state and
+leave private RAM files until reboot. Tor monitors its owning process and exits
+after owner death (documented 15-second polling), but no instantaneous cleanup
+or wiping guarantee is claimed. Tor logs are drained without persistence; only
+bootstrap percentages are displayed. A failed explicitly configured external
+proxy never causes managed-Tor or DIRECT fallback. The public default-router
+NEW credential is bundled, with no runtime operator-website fetch. Queue connections
 can still be linked by routers/timing. Tor is not a mixnet and does not establish
 resistance to broad/global traffic correlation. Fixed SMP blocks are not cover
 traffic. MIXNET, cover traffic, queue rotation and redundancy remain unavailable.

@@ -15,8 +15,8 @@ from OpenSSL import SSL
 
 from private_messenger.config import Server, b64, unb64
 from private_messenger.crypto.backend import SUITE, operation
-from private_messenger.networking.connection import Network
-from private_messenger.networking.swiss import SERVER, download_public_password
+from private_messenger.networking.swiss import PUBLIC_NEW_AUTH, SERVER
+from private_messenger.networking.tor import configured_network
 from private_messenger.sessions import invitations, packets
 from private_messenger.smp.client import AmbiguousSendError, Client, RouterError
 from private_messenger.storage.vault import Vault, VaultError
@@ -53,10 +53,10 @@ def route(server: str, sender_id: str) -> dict:
 
 
 class Messenger:
-    def __init__(self, vault: Vault):
+    def __init__(self, vault: Vault, network=None):
         self.vault = vault
         self.clients = {}
-        self.network = Network(**vault.get("network", {}))
+        self.network = network if network is not None else configured_network(vault)
         with vault.transaction() as db:
             for statement in SCHEMA:
                 db.execute(statement)
@@ -103,7 +103,7 @@ class Messenger:
         native = operation("generate", local_address=b64(secrets.token_bytes(32)))
         auth = self.vault.get("router-auth:" + server.uri)
         if auth is None and server == Server.parse(SERVER):
-            auth = b64(download_public_password(self.network))
+            auth = b64(PUBLIC_NEW_AUTH)
             self.vault.put("router-auth:" + server.uri, auth)
         with Client(server, self.network) as client:
             incoming = client.create_queue(basic_auth=None if auth is None else unb64(auth))

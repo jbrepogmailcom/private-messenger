@@ -23,6 +23,8 @@ class Network:
         # A literal proxy address prevents even proxy-host DNS resolution in TOR mode.
         if self.mode == "TOR":
             ipaddress.ip_address(self.proxy_host)
+            if type(self.proxy_port) is not int or not 1 <= self.proxy_port <= 65535:
+                raise ValueError("Tor proxy port must be in 1..65535")
 
     def connect(self, server: Server) -> socket.socket:
         if self.mode == "DIRECT":

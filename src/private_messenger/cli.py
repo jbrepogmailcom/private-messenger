@@ -16,6 +16,7 @@ from private_messenger.config import Server, b64, unb64
 from private_messenger.crypto.backend import SUITE, CryptoUnavailable, operation
 from private_messenger.identity import public_profile, register
 from private_messenger.networking.connection import Network
+from private_messenger.networking.tor import configured_network, messaging_network
 from private_messenger.smp.client import AmbiguousSendError, Client
 from private_messenger.smp.queues import ReceiveQueue
 from private_messenger.storage.vault import Vault, read_private
@@ -29,7 +30,7 @@ CAPABILITIES = {
     "double_ratchet": "upstream libsignal; bounded behavioral PFS/PCS tests, not an audit",
     "pq_ratchet": "upstream SPQR v1 ML-KEM-768; passive snapshot recovery test",
     "delivery": "atomic ratchet/history/outbox, application replay detection, encrypted receipts",
-    "tor": "implemented: remote DNS, SOCKS isolation, no fallback; test scope in VERIFICATION.md",
+    "tor": "chat default: owned Tor or configured proxy, remote DNS, isolation, no DIRECT fallback",
     "mixnet": "BLOCKED: no verified compatible deployed adapter",
     "whole_vault_rollback": "UNPROTECTED: requires external monotonic state",
     "production_ready": False,
@@ -125,7 +126,7 @@ def passphrase(args) -> str:
 
 
 def network(vault: Vault) -> Network:
-    return Network(**vault.get("network", {}))
+    return configured_network(vault)
 
 
 def receive(vault: Vault, client: Client, name: str, queue, delivery, no_ack: bool) -> None:
@@ -348,8 +349,12 @@ def execute(args, vault: Vault, messenger=None) -> None:
         else:
             from private_messenger.messaging.service import Messenger
 
-            with Messenger(vault) as service:
-                secure_command(args, service)
+            if args.command in ("address", "connect", "accept", "send"):
+                with messaging_network(vault) as route, Messenger(vault, network=route) as service:
+                    secure_command(args, service)
+            else:
+                with Messenger(vault) as service:
+                    secure_command(args, service)
     elif args.command != "quit":
         raise ValueError(f"{args.command}: BLOCKED; authenticated queue rotation is not integrated")
 

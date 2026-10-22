@@ -13,6 +13,10 @@ PAGE = "https://urban-network.ch/services/simplex"
 SERVER = "smp://LtowhzwGvh3lqlFvMqxCTPmZ_OzcwOq_NCsNG7ya1lc=@urban-network.dyndns.org:5224"
 MAX_PAGE_SIZE = 256 * 1024
 
+# Operator-published configuration verified over HTTPS on 2026-10-22.
+# Public NEW access for this pinned relay, not a user password or private key.
+PUBLIC_NEW_AUTH = b"d3310d52d93b42b01f61a52ca010f952014515d89bfafb89"
+
 
 class SameOriginHTTPS(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):

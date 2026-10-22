@@ -1,4 +1,4 @@
-# Private Messenger 0.2 — independent experimental SMP messenger
+# Private Messenger 0.2.1 — independent experimental SMP messenger
 
 Python 3.12+ speaks SMP directly to unmodified public routers, over **TCP/TLS, not
 WebSocket**. No SimpleX Chat engine, CLI, agent, database or Signal messaging
@@ -23,7 +23,8 @@ On Bob's terminal:
 ./chat Bob
 ```
 
-Choose Bob's own password. Enter `address`, then send the returned **whole PMS2:
+Choose Bob's own password. The launcher starts Tor and waits for `Tor: 100 %`
+before connecting to SMP. Enter `address`, then send the returned **whole PMS2:
 invitation** to Alice through an independently trusted channel. Bob also sees a
 local contact `id`; names are not server-side addresses.
 
@@ -59,7 +60,7 @@ There is no automatic migration, shared setup, or overwrite of existing profiles
 On Ubuntu 24.04+, install Python 3.12+, a C toolchain, protoc and libsodium:
 
 ```bash
-sudo apt install python3 python3-venv python3-pip libsodium23 git build-essential protobuf-compiler
+sudo apt install python3 python3-venv python3-pip libsodium23 git build-essential protobuf-compiler tor
 cd private-messenger
 python3 -m venv .venv
 .venv/bin/pip install --require-hashes -r requirements-dev.lock
@@ -99,8 +100,9 @@ system service. Without the compiled extension, secure messaging fails closed.
 - Argon2id + XChaCha20-Poly1305 encrypted vault, 0700/0600 files, process locking,
   atomic fsync/replace, encrypted backup. Restore retains history and **disables old
   sessions** until fresh pairing to avoid resuming stale sending state.
-- DIRECT and fail-closed TOR/SOCKS5 with remote DNS and fresh isolation credentials.
-  TOR depends on `IsolateSOCKSAuth` at the proxy and does not defeat global correlation.
+- TOR by default, including migration of earlier DIRECT chat profiles at login.
+  Owned Tor starts automatically; external SOCKS is configurable. Remote DNS,
+  fresh isolation credentials and no DIRECT fallback. Tor does not defeat global correlation.
 
 The application wrapper has no independent review. Strong whole-vault rollback
 protection, guaranteed memory/disk erasure, authenticated queue/identity rotation,
@@ -131,16 +133,33 @@ router; invitations contain the peer's receive router. No availability fallback 
 performed. A password required for NEW can be imported with
 `servers URI --basic-auth-file PATH` (private 0600 file). This public router creation
 password is distinct from the vault secret, not included in invitations.
-The default operator password is fetched over CA-validated HTTPS only if not cached.
-Its website can block Tor; import credentials out of band in that case. **No DIRECT
-fallback occurs**, including for website discovery.
+The operator-published public NEW credential is bundled with the pinned default
+router (verified 2026-10-22); normal chat performs no operator-website fetch. This
+is public relay configuration, not a profile password/private key. Update via
+a reviewed source change or import a current credential if the operator rotates it.
+There is no automatic HTTP refresh or DIRECT fallback.
 
-Quit the shell before changing network mode for that profile:
+`./chat NAME` selects TOR before any messaging connection, including for profiles
+that previously stored DIRECT. Restart existing processes to apply an update.
+The launcher starts only its own installed Tor process; it changes no system Tor
+service. Bootstrap failure stops startup, with no direct router connection. Normal
+quit stops that owned Tor. Guard state is restored/saved in the encrypted vault;
+Tor runtime files live in a private 0700 RAM directory under `/dev/shm`.
+An unclean crash may leave RAM files until reboot and lose the newest guard state;
+memory/swap and correlation limitations still apply.
+
+To use an existing local Tor proxy instead:
 
 ```bash
-.venv/bin/private-messenger --vault "$HOME/.local/share/private-messenger/secure-profiles/alice.vault" network TOR --proxy-host 127.0.0.1 --proxy-port 9050
-./chat Alice
+./chat Alice --tor-proxy-host 127.0.0.1 --tor-proxy-port 9050
 ```
+
+That proxy configuration persists and must remain available; an external proxy
+error never starts a different route. Its `IsolateSOCKSAuth` configuration is the
+operator's responsibility. For an explicitly requested IP-exposing diagnostic
+chat only, `./chat Alice --network DIRECT` is available. Ordinary `./chat Alice`
+selects TOR again on the next login. The one-shot CLI `network DIRECT` is an
+explicit saved opt-in for its commands, not the chat launcher's default.
 
 A literal proxy IP prevents proxy-host DNS lookup. DIRECT reveals the source IP to
 the router. Tor conceals that IP from the router under its assumptions, while
@@ -162,8 +181,8 @@ fixtures, not the new authenticated chat flow.
 bash scripts/check.sh
 bash scripts/check_crypto.sh
 PM_PUBLIC_SECURE_MESSENGER=1 .venv/bin/pytest -q tests/integration/test_secure_messenger.py -k DIRECT
-# Real Tor proxy plus an independently obtained optional private NEW password file:
-PM_PUBLIC_SECURE_MESSENGER=1 PM_SECURE_TOR_PORT=9050 PM_ROUTER_AUTH_FILE=/private/new-password .venv/bin/pytest -q tests/integration/test_secure_messenger.py -k TOR
+# Real Tor proxy for external-Tor tests and managed-client test cleanup:
+PM_PUBLIC_SECURE_MESSENGER=1 PM_SECURE_TOR_PORT=9050 .venv/bin/pytest -q tests/integration/test_secure_messenger.py -k TOR
 .venv/bin/python scripts/bench_crypto.py
 ```
 

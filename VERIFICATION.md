@@ -317,3 +317,50 @@ root. Rebuild, fmt/clippy, SPQR test and audit passed with that enforcement. The
 platform wheel also passed an import smoke test from its extracted contents,
 independently of the editable source import. The final benchmark above was rerun
 on the zeroizing 0.30.1 binding; its timings are environment-dependent.
+
+## TOR-by-default correction — 0.2.1, 2026-10-22
+
+The previous chat default was DIRECT and did not implement the user's requested
+ordinary Tor workflow. Corrected: `./chat NAME` selects TOR after unlock, before
+any messaging connection, even if this profile previously saved DIRECT. Existing
+processes require quit/restart; prior IP exposure cannot be undone. DIRECT chat
+requires an explicit `--network DIRECT` on that invocation. Configured external
+Tor proxy parameters are retained, and errors never change to managed Tor or DIRECT.
+
+Without external proxy configuration, chat starts an owned installed Tor process
+with isolated SOCKS authentication and waits for 100% bootstrap. It changes no
+system service and terminates only its own process on exit/failure. The documented
+Tor `__OwningControllerProcess` option monitors owner death (15-second polling).
+A private RAM directory under `/dev/shm` contains runtime files; guard state is
+retained inside the encrypted vault on clean shutdown and restored next time.
+Crashes can leave RAM files/new guard state unsaved; swap/erasure limits remain.
+Full Tor logs are discarded; only bootstrap percentages reach the terminal.
+
+The default relay's **public** NEW credential was independently refreshed from
+the operator's CA-validated HTTPS descriptor, checking the exact existing relay
+pin/host/port. It is bundled public configuration, not a user secret or private
+key. Runtime chat now performs no operator-web fetch, so that site's Tor antibot
+challenge requires neither a direct request nor extra setup. A changed operator
+credential requires a reviewed configuration update or explicit file import.
+
+Actual unmodified public Swiss SMP, default launcher test:
+`test_secure_remote_pairing_online_offline_restart_and_replay[MANAGED_TOR]`
+— **1 passed in 182.44s**, no supplied router-password file. Alice/Bob started with
+separate encrypted profiles deliberately configured DIRECT, then logged in through
+plain `./chat NAME` without a network override. Both were automatically switched
+to TOR, each started its own actual Tor, and asserted `síť: TOR`. Signed pairing,
+fingerprints (including delayed verification), Unicode traffic, encrypted receipts,
+Bob completely offline, both-process restart, replay with fresh router IDs and
+single history insertion all passed. Their encrypted guard state survived restart.
+Temporary profiles and queues were cleaned up. A separate owned real Tor SOCKS
+proxy carried the test's injection/cleanup traffic; no test SMP path used DIRECT.
+All test-owned Tor processes were stopped. Existing user profiles were not opened.
+
+Default suite: **74 passed, 20 skipped in 29.71s**. Six new policy/lifecycle tests
+use explicit synthetic Tor child fixtures, not claimed as real Tor experiments:
+old DIRECT migration, external proxy preservation, invalid ports without writes,
+no DNS/direct/alternate-proxy fallback, missing Tor, early exit/bootstrap timeout,
+owned child cleanup and encrypted/restored guard metadata. Existing SOCKS wire
+fixtures verify remote DNS and isolation. Ruff lint/format, Bandit, runtime
+pip-audit passed. Native cryptography was unchanged by this network correction.
+No global packet-capture or traffic-correlation resistance claim is added.

@@ -92,7 +92,7 @@ our source archive contains the binding and pins, not a vendored dependency tree
 For an offline source release, separately vendor and include the full pinned
 Cargo dependency sources/notices using Cargo's supported vendoring workflow.
 
-`bash scripts/build.sh --no-isolation --outdir dist/0.2.0` builds the backend before
+`bash scripts/build.sh --no-isolation --outdir dist/0.2.1` builds the backend before
 packaging. Wheels contain `_crypto_native.abi3.so` and are **platform tagged** (the
 current setuptools build conservatively tags its building Python version).
 They must not be represented as pure Python universal wheels. Source archives
@@ -116,3 +116,8 @@ Native cross-machine bit-for-bit reproducibility and independently verified
 release signatures have not been established for 0.2. No production signing key
 was generated or silently entrusted during development. Existing older 0.1
 distributions/manifests do not represent the new source or secure messenger.
+
+Version 0.2.1 changes normal chat to TOR by default and requires the separately
+installed Tor executable (or an explicitly configured external proxy). The binary
+is a networking dependency, not bundled messenger code. Record/audit its package
+provenance separately; testing used installed Tor 0.4.8.14.

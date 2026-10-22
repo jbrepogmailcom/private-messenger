@@ -59,7 +59,17 @@ Předchozí lokální demo zůstává v `terminal-demo/` a lze je spustit `./cha
 Není automaticky převedené; staré Box konverzace ratchet zpětně nezískají.
 Nevypisuj soukromý obsah vaultů ani neposílej někomu jejich hesla.
 
-Výchozí síť je DIRECT a švýcarský router vidí zdrojovou IP. Pro TOR nejprve ukonči
-chat a nastav profil příkazem uvedeným v README. Web provozovatele může Tor blokovat;
-veřejné heslo pro NEW lze dodat přes `servers URI --basic-auth-file SOUBOR`.
-Nikdy se automaticky nepřechází na DIRECT. Země provozu sama o sobě soukromí nezaručuje.
+Výchozí síť je **TOR**. `./chat Alice` a `./chat Bob` si každý spustí vlastní Tor,
+počkají na `Tor: 100 %` a teprve potom se připojí k SMP. Tor musí být nainstalovaný;
+na vývojovém počítači už je. Při jeho selhání se klient přímo k routeru nepřipojí.
+Starší profil s DIRECT se při tomto spuštění po odemknutí přepne na TOR. Běžící
+starou verzi nejprve ukonči pomocí `quit`. Dřívější přímá spojení změna neskryje.
+
+Vlastní proxy lze nastavit například `./chat Alice --tor-proxy-port 9050`.
+Takto nastavená proxy se zachová i příště; při její nedostupnosti se nic nenahrazuje.
+Režim DIRECT (odhalující IP routeru) vyžaduje výslovné `--network DIRECT`.
+
+Veřejné heslo pro zakládání front na výchozím routeru je přibalené jako veřejné
+nastavení serveru. Chat kvůli němu neotevírá web provozovatele. Pro jiný router nebo
+změněné heslo použij `servers URI --basic-auth-file SOUBOR`. Nejde o heslo profilu.
+Tor nezaručuje ochranu před globální korelací provozu; země provozu sama soukromí nezaručuje.
