@@ -1,7 +1,9 @@
 """Pinned Swiss demo router and its operator's public queue-creation password."""
 
 import html
+import http.client
 import re
+import ssl
 import urllib.parse
 import urllib.request
 
@@ -33,10 +35,33 @@ def public_router_password(page: str) -> bytes:
                 return password
         except ValueError:
             continue
-    raise ValueError("operator page has no matching pinned router descriptor")
+    raise ValueError(
+        "operator page has no matching pinned router descriptor; it may block Tor. "
+        "Obtain the NEW password independently and configure servers URI --basic-auth-file PATH"
+    )
 
 
-def download_public_password() -> bytes:
+def download_public_password(network=None) -> bytes:
+    if network is not None and network.mode == "TOR":
+        # Remote-DNS SOCKS socket, with no secondary direct HTTPS connection.
+        host = "urban-network.ch"
+        sock = network.connect(Server(host, 443, bytes(32)))
+        try:
+            with ssl.create_default_context().wrap_socket(sock, server_hostname=host) as tls:
+                tls.sendall(
+                    b"GET /services/simplex HTTP/1.1\r\nHost: urban-network.ch\r\n"
+                    b"Connection: close\r\nAccept: text/html\r\n\r\n"
+                )
+                response = http.client.HTTPResponse(tls)
+                response.begin()
+                if response.status != 200:
+                    raise ValueError("operator website did not return HTTPS 200")
+                page = response.read(MAX_PAGE_SIZE + 1)
+                if len(page) > MAX_PAGE_SIZE:
+                    raise ValueError("operator page exceeds size limit")
+                return public_router_password(page.decode("utf-8"))
+        finally:
+            sock.close()
     opener = urllib.request.build_opener(SameOriginHTTPS())
     # Fixed HTTPS URL, default CA validation, same-origin HTTPS redirects only.
     with opener.open(PAGE, timeout=20) as response:  # noqa: S310

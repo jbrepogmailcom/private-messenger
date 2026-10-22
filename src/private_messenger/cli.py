@@ -4,7 +4,6 @@ import argparse
 import getpass
 import hashlib
 import json
-import shlex
 import sys
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from OpenSSL import SSL
 
 from private_messenger import __version__
 from private_messenger.config import Server, b64, unb64
+from private_messenger.crypto.backend import SUITE, CryptoUnavailable, operation
 from private_messenger.identity import public_profile, register
 from private_messenger.networking.connection import Network
 from private_messenger.smp.client import AmbiguousSendError, Client
@@ -23,10 +23,12 @@ from private_messenger.storage.vault import Vault, read_private
 CAPABILITIES = {
     "native_smp": "implemented: v11-v20, TLS pinning and channel binding",
     "queue_storage": "implemented: encrypted vault, durable storage before ACK, router-ID dedup",
-    "end_to_end_messenger": "BLOCKED: reviewed authenticated hybrid session protocol required",
-    "local_terminal_demo": "separate ./chat launcher: local pairing and NaCl Box; no PFS/PCS/PQ",
-    "double_ratchet": "BLOCKED: vetted implementation and security review required",
-    "pq_ratchet": "BLOCKED: reviewed interoperable implementation required",
+    "end_to_end_messenger": "signed one-use invitations; mandatory fingerprint verification",
+    "crypto_suite": SUITE,
+    "initial_kem": "ML-KEM-1024: differs from the requested initial ML-KEM-768",
+    "double_ratchet": "upstream libsignal; bounded behavioral PFS/PCS tests, not an audit",
+    "pq_ratchet": "upstream SPQR v1 ML-KEM-768; passive snapshot recovery test",
+    "delivery": "atomic ratchet/history/outbox, application replay detection, encrypted receipts",
     "tor": "implemented: remote DNS, SOCKS isolation, no fallback; test scope in VERIFICATION.md",
     "mixnet": "BLOCKED: no verified compatible deployed adapter",
     "whole_vault_rollback": "UNPROTECTED: requires external monotonic state",
@@ -51,6 +53,9 @@ def parser() -> argparse.ArgumentParser:
         subs.add_parser(name)
     s = subs.add_parser("servers")
     s.add_argument("uri", nargs="?", help="add a pinned router")
+    s.add_argument(
+        "--basic-auth-file", type=Path, help="0600 router NEW password, obtained out of band"
+    )
     n = subs.add_parser("network")
     n.add_argument("mode", choices=["DIRECT", "TOR"], nargs="?")
     n.add_argument("--proxy-host", default="127.0.0.1")
@@ -87,22 +92,26 @@ def parser() -> argparse.ArgumentParser:
         receive = actions.add_parser(name)
         receive.add_argument("name")
         receive.add_argument("--no-ack", action="store_true", help="test redelivery")
-    # Capability gates are explicit; none substitute a static-key homemade protocol.
-    for name in (
-        "address",
-        "connect",
-        "requests",
-        "accept",
-        "verify",
-        "contacts",
-        "send",
-        "listen",
-        "inbox",
-        "history",
-        "rotate",
-    ):
-        gated = subs.add_parser(name, help="BLOCKED until reviewed E2E sessions are integrated")
-        gated.add_argument("arguments", nargs="*")
+    address = subs.add_parser("address", help="create a one-use signed contact invitation")
+    address.add_argument("--server")
+    connect = subs.add_parser("connect")
+    connect.add_argument("invitation")
+    connect.add_argument("--name", default="")
+    for name in ("requests", "contacts", "listen", "inbox"):
+        subs.add_parser(name)
+    for name in ("accept", "verify", "history"):
+        item = subs.add_parser(name)
+        item.add_argument("id")
+        if name == "verify":
+            item.add_argument(
+                "--confirm", help="fingerprint compared over a trusted independent channel"
+            )
+    send = subs.add_parser("send")
+    send.add_argument("id")
+    send.add_argument("message", nargs="+")
+    subs.add_parser(
+        "rotate", help="BLOCKED: authenticated queue rotation is not integrated"
+    ).add_argument("id")
     return p
 
 
@@ -236,7 +245,40 @@ def smp_command(args, vault: Vault) -> None:
             receive(vault, client, args.name, queue, delivery, args.no_ack)
 
 
-def execute(args, vault: Vault) -> None:
+def secure_command(args, messenger) -> None:
+    if args.command == "address":
+        output(messenger.address(args.server))
+    elif args.command == "connect":
+        cid = messenger.connect(args.invitation, args.name)
+        output({"event": "request_sent", "id": cid, **messenger.fingerprint(cid)})
+    elif args.command == "accept":
+        messenger.accept(args.id)
+        output({"event": "accepted", **messenger.fingerprint(args.id)})
+    elif args.command == "verify":
+        output(messenger.fingerprint(args.id, args.confirm))
+    elif args.command in ("contacts", "requests"):
+        contacts = messenger.all_contacts()
+        if args.command == "requests":
+            contacts = [c for c in contacts if c["state"] == "requested"]
+        output([{key: c[key] for key in ("id", "name", "state", "verified")} for c in contacts])
+    elif args.command == "send":
+        mid = messenger.send(args.id, " ".join(args.message))
+        status = next(item["status"] for item in messenger.history(args.id) if item["id"] == mid)
+        output({"event": status, "id": mid, "recipient_delivery": "unconfirmed"})
+    elif args.command == "history":
+        output(messenger.history(args.id))
+    elif args.command == "inbox":
+        output(
+            [
+                {"contact": c["id"], **item}
+                for c in messenger.all_contacts()
+                for item in messenger.history(c["id"])
+                if item["direction"] == "in"
+            ]
+        )
+
+
+def execute(args, vault: Vault, messenger=None) -> None:
     if args.command == "register":
         output(register(vault, args.name))
     elif args.command == "identity":
@@ -245,14 +287,31 @@ def execute(args, vault: Vault) -> None:
             raise ValueError("no local identity")
         output(public_profile(identity))
     elif args.command == "status":
-        output({"capabilities": CAPABILITIES, "network": network(vault).mode})
+        try:
+            backend = operation("metadata")
+        except CryptoUnavailable:
+            backend = {"available": False, "reason": "build pinned native crypto; no fallback"}
+        output(
+            {
+                "capabilities": CAPABILITIES,
+                "crypto_backend": backend,
+                "network": network(vault).mode,
+            }
+        )
     elif args.command == "servers":
         servers = vault.get("servers", [])
         if args.uri:
             uri = Server.parse(args.uri).uri
+            if args.basic_auth_file:
+                password = read_private(args.basic_auth_file, 257).rstrip(b"\r\n")
+                if not 1 <= len(password) <= 255:
+                    raise ValueError("router password must contain 1..255 bytes")
+                vault.put("router-auth:" + uri, b64(password))
             if uri not in servers:
                 servers.append(uri)
                 vault.put("servers", servers)
+        elif args.basic_auth_file:
+            raise ValueError("a pinned server URI is required with --basic-auth-file")
         output(servers)
     elif args.command == "network":
         if args.mode:
@@ -269,29 +328,30 @@ def execute(args, vault: Vault) -> None:
         output({"event": "backup_created"})
     elif args.command == "smp":
         smp_command(args, vault)
-    elif args.command == "unlock":
-        print("Unlocked in this process. Use status/help/quit; keys are not cached on disk.")
-        while True:
-            try:
-                line = input("private-messenger> ")
-            except EOFError:
-                break
-            words = shlex.split(line)
-            if not words:
-                continue
-            if words == ["quit"]:
-                break
-            try:
-                sub = parser().parse_args(words)
-                if sub.command in ("unlock", "register", "restore"):
-                    raise ValueError("command unavailable inside unlocked shell")
-                execute(sub, vault)
-            except (ValueError, OSError, ConnectionError, CryptoError, SSL.Error) as exc:
-                print(f"Error: {exc}", file=sys.stderr)
-            except SystemExit:
-                pass
+    elif args.command in ("unlock", "listen"):
+        from private_messenger.messaging.secure_terminal import run_shell
+
+        run_shell(vault, interactive=args.command == "unlock")
+    elif args.command in (
+        "address",
+        "connect",
+        "requests",
+        "accept",
+        "verify",
+        "contacts",
+        "send",
+        "inbox",
+        "history",
+    ):
+        if messenger is not None:
+            secure_command(args, messenger)
+        else:
+            from private_messenger.messaging.service import Messenger
+
+            with Messenger(vault) as service:
+                secure_command(args, service)
     elif args.command != "quit":
-        raise ValueError(f"{args.command}: BLOCKED until reviewed authenticated E2E sessions exist")
+        raise ValueError(f"{args.command}: BLOCKED; authenticated queue rotation is not integrated")
 
 
 def main(argv=None) -> int:
@@ -313,7 +373,15 @@ def main(argv=None) -> int:
             file=sys.stderr,
         )
         return 3
-    except (ValueError, OSError, ConnectionError, EOFError, CryptoError, SSL.Error) as exc:
+    except (
+        ValueError,
+        OSError,
+        ConnectionError,
+        EOFError,
+        CryptoError,
+        SSL.Error,
+        CryptoUnavailable,
+    ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

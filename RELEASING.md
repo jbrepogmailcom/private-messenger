@@ -80,3 +80,39 @@ that merely serves a JSON log is not sufficient. Network privacy of update/log
 queries and recovery from log/key compromise need review. Until these mechanisms
 are implemented and independently verified, do not claim resistance to colluding
 maintainers, targeted malicious signed releases or transparency-log equivocation.
+
+## Version 0.2 native cryptographic backend
+
+The package now includes a locally built Rust extension, **cryptography only**, not
+an external messenger engine. `native/Cargo.lock` pins registry checksums and exact
+libsignal/SPQR source revisions; `native/rust-toolchain.toml` pins Rust 1.98.1.
+Review upstream AGPL-3.0-only source/notices and the combined distribution terms in
+CRYPTO_DEPENDENCIES.md. Preserve corresponding source for redistributed binaries;
+our source archive contains the binding and pins, not a vendored dependency tree.
+For an offline source release, separately vendor and include the full pinned
+Cargo dependency sources/notices using Cargo's supported vendoring workflow.
+
+`bash scripts/build.sh --no-isolation --outdir dist/0.2.0` builds the backend before
+packaging. Wheels contain `_crypto_native.abi3.so` and are **platform tagged** (the
+current setuptools build conservatively tags its building Python version).
+They must not be represented as pure Python universal wheels. Source archives
+exclude compiled `.so` files and include Rust source/lock/toolchain and tests.
+Unpack and follow README's explicit native-build prerequisites before source
+installation. A missing backend refuses secure messaging, with no static-key fallback.
+
+`bash scripts/check_crypto.sh` runs Rust fmt, clippy with warnings denied, the real
+SPQR snapshot-compromise experiment and cargo-audit. Install cargo-audit separately
+from a verified pinned source; development used 0.22.2. It is not a runtime dependency.
+Audit findings/warnings require review, not automatic suppression. Python test
+checks explicitly require the backend so absent crypto tests cannot silently skip
+in the documented verification workflow. Infrastructure tests still require opt-in.
+
+SOURCE_DATE_EPOCH does not make arbitrary native builds reproducible. Record Rust,
+LLVM/linker, protoc, architecture/CPU flags, Cargo sources, Python ABI, native
+libraries, paths and environment; independently compare clean builds. Protoc 33.1
+was used here (official Linux x86-64 archive SHA-256
+`f3340e28a83d1c637d8bafdeed92b9f7db6a384c26bca880a6e5217b40a4328b`).
+Native cross-machine bit-for-bit reproducibility and independently verified
+release signatures have not been established for 0.2. No production signing key
+was generated or silently entrusted during development. Existing older 0.1
+distributions/manifests do not represent the new source or secure messenger.

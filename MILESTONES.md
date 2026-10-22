@@ -1,16 +1,16 @@
-# Milestone ledger
+# Milestone ledger — 2026-10-22
 
-| Milestone | State | Evidence / remaining work |
+| Milestone | State | Evidence and remaining work |
 |---|---|---|
-| 1: Native SMP interoperability | COMPLETE for the implemented ordinary-client command subset | Separate Python processes, public v20 router, online/offline opaque payloads, ACK/redelivery, persistence, reconnect and sender-key separation; see verification report |
-| 2: Authenticated encrypted messenger | PARTIAL / BLOCKED | Local identities/vault work. Separate same-computer Alice/Bob text demo uses locally provisioned standard NaCl Box keys, encrypted history and application-ID deduplication. Reviewed hybrid session integration, remote invitations/contact verification and receipts remain absent; demo is not this milestone's exit criterion |
-| 3: PFS and PCS | BLOCKED | No vetted ratchet integrated; no application skipped-key, out-of-order, compromise/recovery or rollback-safe ratchet tests |
-| 4: Post-quantum | BLOCKED | No reviewed hybrid KEX/PQ ratchet integrated or interoperable vectors; no PQ claims |
-| 5: Anonymity improvements | PARTIAL | DIRECT/TOR adapters, remote DNS and SOCKS isolation; no traffic-correlation resistance proof, cover traffic, queue rotation, redundant routing or real mixnet adapter |
-| 6: Hardening | PARTIAL | Encrypted vault/recovery, locking, property/static checks, dependency scans and release tooling; independent review, full fuzzing, authenticated release governance and transparency remain open |
+| 1: Native SMP interoperability | COMPLETE for ordinary-client subset | Independent processes, unmodified public v18/v20 routers and local reference matrix; framing/auth, online/offline, ACK/replay, separate keys, reconnect; optional router operations remain outside subset |
+| 2: Authenticated encrypted messenger | WORKING candidate, exact KEM requirement open | Real independent profiles, signed one-use invitations, requests/acceptance, mandatory fingerprints, encrypted bidirectional chat/history/receipts. Official backend initial ML-KEM-1024 differs from requested ML-KEM-768; no independent application review or Signal-app interoperability |
+| 3: PFS and PCS | IMPLEMENTED upstream; bounded behavior verified | Real native Triple/Double Ratchet, out-of-order, 2000-key retention limit, replay/tamper, logical key retirement, atomic state, session restart, passive snapshot DH recovery. Whole-file rollback, physical erasure and persistent active compromise remain unprotected |
+| 4: Post-quantum | WORKING upstream candidate, incomplete original exit criterion | Standard initial ML-KEM-1024, ongoing SPQR v1 ML-KEM-768, epoch progression, SPQR-only passive snapshot recovery, benchmark. Exact initial768 parameter and independent hybrid interoperability vectors/review remain open; no PQ authentication claim |
+| 5: Anonymity improvements | PARTIAL | Real Tor circuit secure-chat online/offline test, remote DNS/isolation/no fallback; website antibot needs out-of-band NEW credential. Queue rotation, cover traffic, redundant routing and real mixnet adapter unavailable; correlation resistance unproven |
+| 6: Hardening | PARTIAL | Encrypted vault/backup, restore invalidation, transaction tests, Python properties/static/audits, Cargo fmt/clippy/audit, pinned builds, manifests/signature tools. Native independent reproducibility, external audit, production key, threshold signing/transparency and broader fuzzing remain open |
 
-Milestone 1 is a transport result. It does not satisfy milestones 2–6 by implication.
-Textual specification discrepancies and all unsupported commands are explicit.
-Use a reviewed candidate cryptographic dependency and independent vectors before
-implementing the messenger protocol. Do not paper over the blockers with invented
-hybrid or ratchet composition.
+The native cryptographic dependency is not an external messaging engine; see
+CRYPTO_DEPENDENCIES.md. Working candidate milestones are not declarations of
+production security or satisfaction of every original requirement. Exact initial
+ML-KEM-768 remains BLOCKED instead of substituted custom cryptography. No automatic
+legacy migration. Version-control commits record source and verification evidence.

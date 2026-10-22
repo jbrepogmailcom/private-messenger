@@ -21,10 +21,10 @@ from private_messenger.storage.vault import Vault, atomic_write
 
 
 class PTYTerminal:
-    """Real controlling terminal: exercise getpass and the executable ./chat launcher."""
+    """Real controlling terminal: exercise getpass in the retained legacy launcher."""
 
     def __init__(self, role, directory):
-        launcher = Path(__file__).parents[2] / "chat"
+        launcher = Path(__file__).parents[2] / "chat-legacy"
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             # Fixed repository launcher; arguments are passed directly, never through a shell.

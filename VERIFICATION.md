@@ -181,18 +181,132 @@ changes the encrypted vault snapshot. Existing user profiles were not decrypted
 or modified for these tests. The previously verified public-message transport is
 unchanged; no additional public-router test was needed for the local display.
 
-## Requirements still unverified or unavailable
+## New session implementation
 
-- Remote E2E identity/contact authentication, reviewed messenger session protocol,
-  ML-KEM/hybrid KEX, PQXDH compatibility and PQ ratchets: not implemented. The local
-  two-terminal demo above has a deliberately different, narrower trust model.
-- Double Ratchet key updates, out-of-order/skipped-key bounds, application replay
-  attacks against ratchets, PFS/PCS compromise/recovery and safe ratchet restoration:
-  no tests or claims. The demo's static-key replay tests are separate.
-- Whole-vault rollback, secure Python/SSD erasure, side-channel resistance and
-  temporary device compromise recovery: not provided.
-- Deployed 3/4-certificate chains and all optional SMP commands: not verified.
-- Queue rotation, redundancy, receipts, bounded authenticated application retries,
-  padding schedules, cover traffic, mixnet and correlation resistance: absent.
-- Multi-party signing, deployed transparency and an established independently
-  authenticated release key: absent. Manifest/signature tests alone do not supply them.
+The earlier results above describe the legacy source at the stated dates. The
+2026-10-22 results and remaining gaps are recorded below.
+
+## Secure remote messenger candidate — 2026-10-22
+
+New `chat` uses separate profile generation and passwords. The old static-key
+same-computer fixture is retained as `chat-legacy`. Real cryptographic operations
+use the pinned native backend, not mocks: libsignal commit
+`b369755533ef5a3fae9b31b989114f22e074dfab`, SPQR v1.6.0,
+Rust 1.98.1, protoc 33.1, PyO3 0.30.1. No upstream crypto modifications.
+**Initial ML-KEM-1024 differs from the originally required ML-KEM-768.**
+The ongoing ratchet is SPQR v1 / ML-KEM-768 plus upstream Double Ratchet.
+No Signal application/PQXDH interoperability certification or external audit.
+
+### Actual public router, separate processes
+
+Pinned Swiss Urban-Network `urban-network.dyndns.org:5224`, negotiated SMP v18,
+unchanged server. Command:
+
+```bash
+PM_PUBLIC_SECURE_MESSENGER=1 .venv/bin/pytest -q tests/integration/test_secure_messenger.py -k DIRECT
+```
+
+**1 passed in 17.59s** after the PyO3 security update (an earlier backend run
+also passed). The subsequent actual TOR test exercised the new executable `chat`
+launcher with the same core scenario, **1 passed in 36.71s**:
+
+- Bob generates a signed public invitation; independently created Alice connects
+  using only it; Bob receives/accepts; both compute and confirm the matching
+  60-digit fingerprint before application text can be sent.
+- Bidirectional encrypted Unicode text and authenticated recipient receipts.
+- Bob fully exits; Alice sends two messages accepted into his router queue; Alice
+  exits too; Bob restarts and decrypts, Alice restarts and receives receipts.
+- Test republishes identical application ciphertext with a fresh router message ID;
+  Bob's history retains one copy, and his subsequent encrypted reply is received.
+- Independent vault directories/passwords; no shared setup or SimpleX/Signal engine.
+  All test queues deleted and temporary profiles cleaned up. Existing user profiles
+  were not decrypted or modified. Test passwords/keys are absent from this record.
+
+The TOR run used an owned disposable Tor 0.4.8.14 process, actual 100% circuit
+bootstrap, local SOCKS with IsolateSOCKSAuth. Client setup, SMP operations, replay
+injection and queue cleanup all used TOR, without DIRECT fallback. The operator's
+HTTPS site returned a 200 antibot challenge to Tor (no router descriptor); that
+attempt failed closed. The successful run supplied the public NEW password to
+both encrypted test profiles out of band. Its test harness fetched that public
+credential over DIRECT HTTPS **before client execution**; this preparatory fetch
+is not represented as anonymous or Tor website interoperability. Normal TOR
+clients never perform that direct fetch. No global packet-capture anonymity proof.
+
+### Native cryptography and state tests
+
+Real upstream encryption/decryption tests include out-of-order initial messages,
+replay rejection, corrupted ciphertext without state mutation, signed-prekey/
+legacy-KEM downgrade rejection, one-use setup-key retirement, mandatory fingerprint
+verification and the published upstream fingerprint v2 vector. A 2003-message
+same-chain experiment confirms skipped keys are bounded: a retained middle key
+works and the evicted oldest key cannot decrypt. A current protocol state cannot
+decrypt a consumed earlier packet after further DH steps (logical erasure test).
+
+Classical PCS experiment: a snapshot initially decrypts a subsequent response,
+then fails after honest fresh DH exchange. Honest peers still communicate.
+Full Triple Ratchet exchanges progress beyond PQ epoch 3/4 and require SPQR v1.
+A separate **native Rust SPQR-only** experiment removes classical DH entirely:
+attacker receives a complete earlier endpoint state and sees all subsequent
+protocol messages, but has no future endpoint/RNG control. It initially derives
+56 reply keys, then loses access at round 56 after fresh KEM entropy. This test
+passed on PyO3 0.30.1's locked dependency tree (1.45s test time). Healing delay is
+this fixture's result, not a guaranteed universal number of messages.
+
+These are behavior experiments with real cryptography, not formal PFS/PCS proofs,
+quantum simulations or independent inter-implementation vectors for hybrid KEX.
+No new cryptographic construction was substituted for unavailable functionality.
+
+Application unit tests use a **mock relay**, explicitly distinguished from the
+public integration above, but real native crypto/vault. They verify exact-byte
+ambiguous-SEND retries, cross-ID duplicate handling, failed snapshot atomic rollback
+including generated receipt/ratchet, fingerprint mismatch, and restore invalidation
+of old sessions while retaining history. Property tests generate real native
+binary-message round trips, parser inputs and bounded compressed invitation data.
+SQLite secure-delete tests check superseded private records are absent from the
+current serialized snapshot, not physical media/memory erasure.
+
+### Performance and supply chain
+
+A local benchmark (`scripts/bench_crypto.py`, 160 rounds, 320 messages, 256-byte
+payload) measured packet size min 366, max 2054, mean 399.94 bytes **including the
+37-byte app header, excluding SMP's fixed 16-KiB framing**. Median encrypt/decrypt
+3.777/4.182 ms includes JSON binding/state serialization, excludes vault KDF/I/O
+and network. Hardware/environment dependent development sample, not a throughput
+or latency guarantee. Native status showed session v4 and SPQR v1 negotiated,
+Alice epoch4/send3, Bob epoch3/send3.
+
+Ruff/Bandit and Rust fmt/clippy (`-D warnings`) passed. Python runtime pip-audit
+found no known vulnerabilities. Rust audit first found PyO3 RUSTSEC-2026-0176 and
+0177 at 0.27.2; upgraded to **0.30.1** and rebuilt/retested. Final cargo-audit 0.22.2
+reported **zero known vulnerabilities**, plus one maintenance warning:
+`proc-macro-error2` 2.0.1, RUSTSEC-2026-0173 (unmaintained), through hax-lib-macros
+in the all-target dependency graph. It was not selected in the active Linux
+build tree. This warning is documented, not ignored or called a clean audit.
+No independent audit of native system packages/compiler was performed.
+
+### Remaining gaps
+
+Exact initial ML-KEM-768; independent hybrid/Signal-app interoperability vectors;
+independent application/security audit; malicious whole-file rollback detection;
+guaranteed secret deletion; PQ authentication; authenticated queue/identity rotation;
+cover traffic; redundant delivery; real mixnet; broad correlation resistance;
+seamless historical ratchet recovery; multi-party release governance/transparency;
+and independent native reproducibility remain unavailable or unverified.
+
+Final source checks after secret-buffer retirement hardening: **68 passed,
+19 skipped** in 44.18s; skipped tests require explicit public/local-reference
+infrastructure opt-in. Native fmt/clippy and SPQR experiment passed; runtime,
+development and build Python dependency audits found no known vulnerabilities.
+The Rust maintenance warning above remains. Wrapper-owned serialized private
+buffers are zeroized best effort on retirement/drop; this is not a memory-proof.
+The 0.2 platform wheel and source archive built successfully: wheel contains its
+native backend and is not marked pure Python; sdist contains Cargo source/lock and
+tests and excludes compiled binaries/target directories. Independent reproduction
+and a trusted signature on these new development artifacts remain unverified.
+
+Final DIRECT integration of the executable launcher passed in **18.01s**, also
+exercising delayed verification: Alice sends while Bob has not yet confirmed the
+fingerprint; Bob rejects without ACK/history insertion, then his explicit valid
+verification resumes the queued ciphertext and delivers it without restarting.
+TOR evidence above predates this additional UI recovery assertion; it retains
+its stated successful online/offline/receipt/replay scope.

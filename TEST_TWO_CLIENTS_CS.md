@@ -1,54 +1,65 @@
-# Alice a Bob ve dvou terminálech
+# Alice a Bob ve dvou oknech
 
-Na tomto počítači spusť v **prvním okně**:
+Nový `./chat` používá samostatné profily, vzdálené párování a ratchet. Obě okna
+mohou běžet na různých počítačích. Hesla se nemusí shodovat. Nejde o auditovanou
+produkční aplikaci. Sestavení je popsané v README; na vývojovém počítači už je hotové.
 
-```bash
-/home/janbenes/private-messenger/chat Alice
-```
+1. V prvním okně spusť `cd /home/janbenes/private-messenger` a `./chat Bob`.
+   Zvol Bobovo heslo. Napiš `address`.
+2. Z výstupu zkopíruj celou hodnotu začínající `PMS2:` — bez okolních uvozovek.
+   To je Bobova jednorázová adresa pro tento kontakt. Předej ji Alici důvěryhodnou cestou.
+3. Ve druhém okně spusť `cd /home/janbenes/private-messenger` a `./chat Alice`.
+   Zvol Alicino heslo. Vlož pozvánku `PMS2:…` a stiskni Enter.
+4. Bob uvidí žádost a příkaz například `accept a1b2c3d4e5f60718`. Proveď **příkaz,
+   který skutečně vypíše jeho okno**. Lokální ID Alice a Boba se liší.
+5. Každý napište `verify ID` se svým lokálním ID. Zobrazených 60 číslic porovnejte
+   osobně nebo jiným ověřeným kanálem. Potom každý napište:
 
-Při prvním spuštění zvol heslo a zopakuj ho. Oba testovací profily se připraví
-samy. Počkej na `Příjem připraven`.
+   ```text
+   verify ID --confirm SKUTECNY_60MISTNY_OTISK
+   ```
 
-Ve **druhém okně** spusť:
+6. Alice napíše `Ahoj Bobe!`. Bob zprávu uvidí a může stejným způsobem odpovědět.
+   Po ověření je tento kontakt vybraný; s více kontakty piš `send ID TEXT`.
 
-```bash
-/home/janbenes/private-messenger/chat Bob
-```
+`contacts` ukáže ID kontaktů; `history ID` historii; `quit` ukončí klienta.
+`server_accepted` znamená přijetí routerem. Teprve `recipient_received` / „Příjemce
+potvrdil zprávu“ označuje autentizované potvrzení klienta. Neznamená přečtení člověkem.
 
-Zadej stejné heslo. Teď v Alicině okně napiš:
+Offline test: Bob napíše `quit`; Alice odešle zprávu. Bob znovu spustí `./chat Bob`,
+zadá své heslo a zprávu přijme. Alice musí být spuštěná, aby přijala jeho potvrzení;
+pokud je vypnutá, potvrzení počká v její frontě. Doručení závisí na retenci routeru.
 
-```text
-Ahoj Bobe!
-```
+## Co přesně je adresa a vzdálené párování
 
-Stiskni Enter. Bob uvidí:
+`address` pokaždé vytvoří novou frontu, nový náhodný kontaktový identifikátor,
+kontaktový klíč identity, klasické prekeys a ML-KEM klíč. Router náhodně přidělí
+identifikátory fronty. Pozvánka obsahuje adresu routeru, jeho certifikátový otisk,
+**odesílací** ID fronty, veřejné klíče, kryptografickou sadu, expiraci a podpis.
+Neobsahuje Bobovo heslo, soukromé klíče ani oprávnění číst jeho frontu.
 
-```text
-Alice: Ahoj Bobe!
-```
+Pozvánka je komprimovaný Base32 řetězec kompatibilní s alfanumerickým QR kódem
+(do kapacity QR 40-L); vykreslování QR zatím není součástí CLI. Platí sedm dní a
+je pro jeden kontakt. Nevystavuj ji veřejně: první držitel může obsadit frontu.
+`address` není vyhledávání uživatele jménem Bob ani registrace na serveru.
 
-Bob může rovnou napsat odpověď. `/quit` ukončí klienta, `/history` zobrazí historii.
-Stejnými příkazy se znovu přihlásíš. Když je Bob vypnutý, zpráva počká na SMP
-serveru, dokud ji nevyzvedne (v mezích jeho dostupnosti, kvóty a retenční doby).
+Vzdálené párování znamená, že si Alice a Bob předají jen veřejnou pozvánku. Každý
+vygeneruje vlastní soukromé klíče na svém zařízení. Neprovádí se společný lokální
+setup a nepotřebují sdílené heslo. Porovnání otisku chrání spojení s konkrétním člověkem.
 
-Bobovu přijímací adresu zobrazíš příkazem `/address` v Bobově chatu. Po aktualizaci
-starší běžící klient restartuj. Případně Boba ukonči přes `/quit` a spusť:
+## Verze a zbývající omezení
 
-```bash
-/home/janbenes/private-messenger/chat Bob --address
-```
+Použitá oficiální knihovna má při navázání X25519 + **ML-KEM-1024**, potom Double
+Ratchet + průběžný SPQR s **ML-KEM-768**. To se liší od původně požadovaného
+ML-KEM-768 také při navázání. Vlastní kryptografickou náhradu jsme nevytvořili.
+PFS/PCS mají předpoklady a omezení uvedené v SECURITY.md; nejde o dokonalou ochranu.
 
-Po zadání hesla vypíše pouze server, ID fronty pro odesílatele a veřejný šifrovací
-klíč. Tento výpis se k síti nepřipojuje. Při první společné přípravě se tyto údaje
-uložily Alici automaticky; jméno Bob se na serveru nevyhledává. Výpis zatím není
-pozvánkou pro nové kontakty: fronta už je zabezpečená pro Alicin odesílací klíč.
+Nové profily jsou v `~/.local/share/private-messenger/secure-profiles/`.
+Předchozí lokální demo zůstává v `terminal-demo/` a lze je spustit `./chat-legacy`.
+Není automaticky převedené; staré Box konverzace ratchet zpětně nezískají.
+Nevypisuj soukromý obsah vaultů ani neposílej někomu jejich hesla.
 
-Jde o test na **jednom počítači**, se dvěma samostatnými procesy a skutečným
-švýcarským SMP serverem Urban-Network. Klíče se předají při místní přípravě;
-zprávy přes síť chrání standardní NaCl Box a historie je šifrovaná heslem.
-Ratchet, PFS/PCS, postkvantová ochrana a párování vzdálených zařízení dosud chybí.
-Režim je DIRECT: server vidí IP. Potvrzení serveru není potvrzením od příjemce.
-
-Profily zůstávají v `~/.local/share/private-messenger/terminal-demo/`;
-starší profily se nepřepisují. Podrobnosti a omezení: [SECURITY.md](SECURITY.md).
-Automatický test transportu pro vývojáře: `bash scripts/demo_swiss.sh`.
+Výchozí síť je DIRECT a švýcarský router vidí zdrojovou IP. Pro TOR nejprve ukonči
+chat a nastav profil příkazem uvedeným v README. Web provozovatele může Tor blokovat;
+veřejné heslo pro NEW lze dodat přes `servers URI --basic-auth-file SOUBOR`.
+Nikdy se automaticky nepřechází na DIRECT. Země provozu sama o sobě soukromí nezaručuje.

@@ -91,3 +91,17 @@ def test_reject_insecure_directory_and_symlink(directory):
     path.symlink_to(Path("/dev/null"))
     with pytest.raises(OSError):
         Vault(path, "test")
+
+
+def test_superseded_private_records_do_not_remain_in_serialized_sqlite_free_pages(directory):
+    path = directory / "state.vault"
+    obsolete_secret = "retired-private-state-marker-" * 1000
+    with Vault(path, "test", create=True) as vault:
+        assert vault.db.execute("PRAGMA secure_delete").fetchone() == (1,)
+        vault.put("session", obsolete_secret)
+        assert obsolete_secret.encode()[:1024] in vault.db.serialize()
+        vault.put("session", "new session state")
+        assert obsolete_secret.encode()[:1024] not in vault.db.serialize()
+    with Vault(path, "test") as vault:
+        assert vault.db.execute("PRAGMA secure_delete").fetchone() == (1,)
+        assert obsolete_secret.encode()[:1024] not in vault.db.serialize()

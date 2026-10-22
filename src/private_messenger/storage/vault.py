@@ -139,6 +139,9 @@ class Vault:
                 except (CryptoError, sqlite3.DatabaseError) as exc:
                     raise VaultError("wrong passphrase or damaged vault") from exc
             self.db.execute("PRAGMA trusted_schema=OFF")
+            # Prevent superseded serialized ratchets lingering in SQLite free pages.
+            # This does not wipe Python copies, older snapshots, backups or SSD cells.
+            self.db.execute("PRAGMA secure_delete=ON")
         except BaseException:
             self.close()
             raise
@@ -206,6 +209,11 @@ class Vault:
     def restore(source: Path, destination: Path, passphrase: str) -> None:
         # Authenticate and structurally validate before making a new recovery file.
         with Vault(source, passphrase) as original:
+            # Mark only the recovery snapshot in RAM; never change the source.
+            # Old ratchet states must not resume after restoring a historical backup.
+            original.db.execute(
+                "INSERT OR REPLACE INTO state VALUES ('restore_requires_repair','true')"
+            )
             original.backup(destination)
 
     def close(self) -> None:

@@ -1,243 +1,175 @@
-# Private Messenger — experimental independent SMP client
+# Private Messenger 0.2 — independent experimental SMP messenger
 
-Working Python 3.12+ source, independent of SimpleX Chat and its agent. **Milestone 1
-is implemented and verified against public routers. A two-terminal text demo with
-local pairing is available; the general authenticated messenger is incomplete
-and is not production-ready.**
+Python 3.12+ speaks SMP directly to unmodified public routers, over **TCP/TLS, not
+WebSocket**. No SimpleX Chat engine, CLI, agent, database or Signal messaging
+service is used. A small Rust extension calls pinned upstream **cryptography only**:
+libsignal-protocol for authenticated hybrid establishment and its Triple Ratchet.
+All SMP transport, queues, contacts, networking and persistence are our code.
 
-The Python client speaks SMP directly over TCP/TLS (normally port 5223). It does
-not use WebSocket, a messaging engine, SimpleX CLI, an agent library, or an existing
-user database. The upstream source was consulted as a wire-format reference only.
+**Experimental and unaudited.** Working remote pairing and bidirectional encrypted
+messages are verified; this is not a production security recommendation.
 
-## Implemented
+The selected upstream backend uses **X25519 + ML-KEM-1024 initially**, then a
+Double Ratchet combined with **SPQR v1 / ML-KEM-768**. The original requirement of
+ML-KEM-768 for the *initial* exchange remains unsatisfied. We preserve upstream
+cryptography instead of inventing a replacement. No Signal application or PQXDH
+interoperability certification is claimed. See [crypto dependencies](CRYPTO_DEPENDENCIES.md).
 
-- Pinned certificate-path authentication, TLS 1.3 / X25519 /
-  ChaCha20-Poly1305, ALPN `smp/1`, TLS Finished channel binding.
-- SMP versions 11–20; highest compatible version; versions below 11 rejected.
-- 16,384-byte blocks, batching, binary encodings, signed router session key,
-  SMP HKDF-SHA-512 transport encryption chains.
-- Ed25519 command authorization; NEW, KEY, SKEY, SEND, GET, SUB, ACK, DEL, PING.
-- Separate per-queue recipient authentication, recipient DH and sender keys.
-- Offline queues, explicit reconnect with bounded backoff, redelivery handling,
-  durable storage before ACK and router-message-ID deduplication.
-- Local identity generation, encrypted persistence, backup/restore, no registration
-  request to a server and no transmission of the local identity.
-- Argon2id and XChaCha20-Poly1305 encrypted SQLite snapshots, process locking,
-  restrictive permissions and atomic fsync/replace.
-- DIRECT and fail-closed SOCKS/TOR adapters with remote DNS and fresh isolation
-  credentials on each connection. Test scope is in [VERIFICATION.md](VERIFICATION.md).
-- Multiple explicitly pinned router configurations, property tests, static checks,
-  hashed dependency locks and release-manifest/signature tools.
-- Interactive Alice/Bob text demo on one computer, local out-of-band key
-  provisioning, standard PyNaCl Box payloads, encrypted history and authenticated
-  application-ID deduplication. This demo does not implement the planned session protocol.
+## Two terminals, or two separate computers
 
-## Explicitly unavailable
-
-Authenticated remote contact invitations, acceptance, verification, the general
-conversational session protocol, ML-KEM-768 hybrid key establishment, Double Ratchet,
-skipped keys, PFS/PCS between contacts, PQ ratcheting, conversation
-queue rotation, redundant routing, delivery receipts and cover traffic are **not
-implemented**. MIXNET is blocked pending a real compatible adapter.
-
-The main CLI gates messenger commands with a clear BLOCKED error. The separate
-local-pairing demo is not a substitute for those blocked milestones. See [MILESTONES.md](MILESTONES.md) and
-[SECURITY.md](SECURITY.md). SMP transport encryption is not conversational E2E
-security; a router knows its own transport and delivery-layer keys.
-
-## Ubuntu installation
-
-Ubuntu 24.04 or later, Python 3.12+, native libsodium and OpenSSL-compatible wheels:
-
-```bash
-sudo apt install python3 python3-venv python3-pip libsodium23 git iproute2
-cd private-messenger
-python3 -m venv .venv
-.venv/bin/pip install --require-hashes -r requirements-dev.lock
-.venv/bin/pip install --require-hashes -r requirements-build.lock
-.venv/bin/pip install --no-deps --no-build-isolation -e .
-```
-
-The build backend is pinned in `pyproject.toml`; install `requirements-build.lock`
-before using `--no-build-isolation`. If the system Python cannot bootstrap pip,
-an existing `uv` installation can create the environment and install the same
-hashed lockfiles. The development session used `uv` with Python 3.12.7.
-
-`libsodium23` is used through a narrow native HSalsa20 binding; no primitive is
-implemented in Python. System-package version and security updates are part of
-the trusted platform, separately from Python lockfiles.
-
-## Interactive Alice/Bob: two terminals on this computer
-
-First terminal:
-
-```bash
-./chat Alice
-```
-
-Choose a password on first use and wait for `Příjem připraven`. Setup creates both
-local test profiles and secures both queues on the pinned Swiss Urban-Network SMP
-router. Then, in a second terminal in this directory:
+On Bob's terminal:
 
 ```bash
 ./chat Bob
 ```
 
-Enter the same test password. Type `Ahoj Bobe!` in Alice's terminal and press Enter;
-Bob sees `Alice: Ahoj Bobe!`. Bob can reply the same way. No send command or manual
-queue-address exchange is needed. `/history` shows recent history; `/quit` exits.
-Offline messages arrive when the recipient starts the same profile again.
+Choose Bob's own password. Enter `address`, then send the returned **whole PMS2:
+invitation** to Alice through an independently trusted channel. Bob also sees a
+local contact `id`; names are not server-side addresses.
 
-`/address` displays the current profile's receiving server, sender queue ID and
-payload public key. Outside the running chat, `./chat Bob --address` prompts for
-the password and displays the same values offline, without modifying the vault.
-If Bob is running, use `/address` there (restart after updating the code), or quit
-that profile first. These are local-demo routing/key details, not a general contact
-invitation: the queue is already secured for the paired sender. Queue IDs are
-random identifiers assigned by the router on NEW; payload key pairs are generated
-locally by PyNaCl. Setup copies Bob's sender queue ID and public payload key into
-Alice's encrypted profile; names are never used for server-side lookup.
-
-Profiles persist at `~/.local/share/private-messenger/terminal-demo/`, in separate
-encrypted vaults. No password file is created; existing non-demo profiles are
-untouched. Both demo vaults deliberately share the password chosen during setup.
-This flow is only for two terminals on one trusted computer. It locally provisions
-keys, uses the published [PyNaCl Box API](https://pynacl.readthedocs.io/en/latest/public/)
-for payload encryption, and does not implement remote contact authentication,
-hybrid key exchange, ratchets, PFS/PCS or post-quantum security. It uses DIRECT:
-the operator sees your IP and connection metadata. Successful SEND confirms only
-server acceptance; there are no recipient receipts. See [SECURITY.md](SECURITY.md).
-
-## Automated Alice/Bob transport demo
-
-On the configured development machine, a single command runs the Swiss-router
-test, prepares temporary Alice/Bob profiles and automatically fetches the
-operator's published queue-creation password over HTTPS:
+On Alice's terminal, independently:
 
 ```bash
-bash scripts/demo_swiss.sh
+./chat Alice
 ```
 
-It requires the already verified router certificate identity; a changed identity
-or an unexpected website redirect stops the test. It uses direct TLS and sends
-only encrypted random test payloads. Temporary profiles and queues are cleaned up.
-This script remains an automated opaque transport test. Use `./chat` above for text.
-
-Czech walkthrough: [two separate clients](TEST_TWO_CLIENTS_CS.md) and
-[server selection / Iceland investigation](SERVER_SELECTION_CS.md).
-
-```bash
-bash scripts/demo_alice_bob.sh --server \
-  'smp://u2dS9sG8nMNURyZwqASV4yROM28Er0luVTx5X1CsMrU=@smp4.simplex.im'
-```
-
-The advertised identity above comes from the upstream router list; check a trusted
-source before relying on a router identity. The demo launches separate Alice and
-Bob Python processes, uses encrypted random test payloads and ephemeral encrypted
-vaults, verifies offline retrieval, an unacknowledged redelivery after process exit,
-single local insertion, ACK deletion and concurrent online delivery. It deletes
-its queue afterwards. It does not establish a conversational encryption session.
-
-The `PMQ1:` transport descriptor carries the pinned server and sender queue ID.
-It is an explicitly application-specific diagnostic descriptor, **not** an SMP
-command/field, authenticated contact invitation or SimpleX Chat invitation. No
-invented fields are sent to an SMP router. Senders can race to secure a fresh
-queue if this descriptor leaks; authenticated invitations are a later milestone.
-
-## Local identity and storage
-
-```bash
-.venv/bin/private-messenger register Alice
-.venv/bin/private-messenger identity
-.venv/bin/private-messenger servers \
-  'smp://u2dS9sG8nMNURyZwqASV4yROM28Er0luVTx5X1CsMrU=@smp4.simplex.im'
-.venv/bin/private-messenger status
-.venv/bin/private-messenger unlock
-```
-
-Passphrases are prompted with `getpass`. `unlock` opens an in-process command
-shell, and `quit` drops references to keys and closes the database. Other commands
-prompt independently; nothing is cached by a daemon. An optional
-`--passphrase-file PATH` requires a user-owned 0600 regular file. Never supply a
-passphrase in command arguments or commit it.
-
-The default vault is `~/.private-messenger/state.vault`; its directory must be 0700.
-For separate profiles use `--vault /private/path/alice.vault` before the command.
-
-```bash
-.venv/bin/private-messenger backup /private/backup/alice.vault
-.venv/bin/private-messenger --vault /private/recovered/alice.vault \
-  restore /private/backup/alice.vault
-```
-
-Restore authenticates the snapshot, never overwrites an existing vault and needs
-the original passphrase. Backups contain all historical credentials/state; protect
-them accordingly. Whole-vault rollback cannot be detected without an external
-monotonic reference. Recovered identities/sessions require future protocol-specific
-recovery handling before conversational use.
-
-## SMP diagnostic CLI
-
-Use `private-messenger smp --help`. Supported commands:
+Choose Alice's own password, paste Bob's invitation and press Enter. Bob sees a
+request and runs `accept ID` using the ID shown in **Bob's** window. Alice and Bob
+run `verify ID` using their respective local IDs, compare the 60-digit fingerprint
+in person or over another authenticated channel, then each enters:
 
 ```text
-smp ping SERVER
-smp create NAME SERVER [--basic-auth-file PATH]
-smp address NAME
-smp secure SENDER_NAME PMQ1_DESCRIPTOR
-smp send SENDER_NAME CIPHERTEXT_FILE
-smp get NAME [--no-ack]
-smp subscribe NAME [--no-ack]
-smp delete NAME
+verify ID --confirm THE_60_DIGITS
 ```
 
-`send` accepts already encrypted opaque bytes, at most 16,048 bytes. This low-level
-API cannot establish that caller-supplied bytes are encrypted or authenticated.
-CLI receive output contains only status and a ciphertext digest, not body contents.
-A successful SEND means **server acceptance**, not confirmed recipient delivery.
-Unknown acceptance is persisted and automatic retries of identical ciphertext
-are refused. No authenticated recipient receipts exist yet. Duplicate detection
-uses router IDs and therefore does not defeat malicious republishing with new IDs.
+Alice can now type `Ahoj Bobe!`; Bob sees it and can reply by typing text. With
+multiple contacts use `send ID TEXT`. `history ID` shows delivery states; `quit`
+exits. `server_accepted` is distinct from the encrypted `recipient_received`
+receipt. These receipts confirm application processing, not that a human read it.
+Offline messages wait at the router while its retention/quota permits.
 
-Routers requiring a password for NEW can use `--basic-auth-file PATH`, a user-owned
-0600 file. Only its filename appears in process arguments; the password is sent
-inside the pinned encrypted SMP connection for NEW, never in invitations or sender
-commands, and is not copied into queue state. The same flag is accepted by the
-Alice/Bob demo. This router password is separate from the local vault passphrase.
+[Podrobný český návod](TEST_TWO_CLIENTS_CS.md). Each profile is created separately
+in `~/.local/share/private-messenger/secure-profiles/`; passwords need not match.
+The old same-computer demo remains available as `./chat-legacy` in its original
+`terminal-demo/` directory. Its static Box keys have no PFS/PCS/PQ protection.
+There is no automatic migration, shared setup, or overwrite of existing profiles.
 
-The diagnostic `subscribe` receives one delivery; callers of the Python API can
-continue receiving and ACKing. GET and SUB cannot be mixed on one queue connection.
-`reconnect()` never replays SEND; applications must resubscribe after reconnect.
-Automatic loss recovery for an entire messenger conversation is not implemented.
+## Ubuntu source installation
 
-## TOR
+On Ubuntu 24.04+, install Python 3.12+, a C toolchain, protoc and libsodium:
 
 ```bash
-.venv/bin/private-messenger network TOR --proxy-host 127.0.0.1 --proxy-port 9050
-.venv/bin/private-messenger network DIRECT
+sudo apt install python3 python3-venv python3-pip libsodium23 git build-essential protobuf-compiler
+cd private-messenger
+python3 -m venv .venv
+.venv/bin/pip install --require-hashes -r requirements-dev.lock
+.venv/bin/pip install --require-hashes -r requirements-build.lock
 ```
 
-Supply a literal local proxy IP. The adapter sends destination hostnames through
-SOCKS5 without local DNS lookup; fresh usernames/passwords allow Tor isolation when
-`IsolateSOCKSAuth` is enabled. It never tries DIRECT on a proxy error. Each CLI
-queue operation opens a new connection. Tor's presence does not prevent global
-traffic correlation or prove who controls an endpoint. DIRECT exposes source IP
-to the router. Router operators still see timing, queues and traffic volume.
+Install Rust using the [official rustup instructions](https://rustup.rs/), verify
+the downloaded installer using the official checksum, then install the pinned
+Rust **1.98.1** toolchain. Build and install:
+
+```bash
+rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+bash scripts/build_crypto.sh
+.venv/bin/pip install --no-deps --no-build-isolation -e .
+./chat Alice
+```
+
+Cargo uses `native/Cargo.lock` and an exact upstream git revision. The installed
+compiler must support edition 2024; protoc must be on PATH (or set `PROTOC`). The
+verified development build used protoc 33.1; system versions are not all tested.
+The build script also recognizes the private, ignored `.work-crypto` toolchain
+used during development. It never downloads a messenger engine or changes a
+system service. Without the compiled extension, secure messaging fails closed.
+
+## Implemented and tested
+
+- Native SMP v11–20 negotiation, TLS 1.3, validated pinned certificate identity,
+  signed ephemeral server key, Finished channel binding, fixed 16,384-byte framing.
+- NEW, KEY/SKEY, SEND, GET, SUB, ACK, DEL, PING, separate recipient/sender credentials,
+  public-router offline storage, reconnect and authenticated delivery-layer decoding.
+- Local identity; fresh identity/prekeys/queue for every contact; signed, expiring,
+  one-use QR-compatible invitations; requests, acceptance and mandatory fingerprints.
+- Upstream hybrid establishment, Double/Triple Ratchet and ongoing PQ epochs; real
+  native out-of-order, replay, tamper, key-retirement and compromise-recovery tests.
+- Atomic encrypted ratchet/history/outbox transitions before ACK/SEND; bounded
+  retries of the same ciphertext; application IDs and cross-router-ID replay detection.
+- Argon2id + XChaCha20-Poly1305 encrypted vault, 0700/0600 files, process locking,
+  atomic fsync/replace, encrypted backup. Restore retains history and **disables old
+  sessions** until fresh pairing to avoid resuming stale sending state.
+- DIRECT and fail-closed TOR/SOCKS5 with remote DNS and fresh isolation credentials.
+  TOR depends on `IsolateSOCKSAuth` at the proxy and does not defeat global correlation.
+
+The application wrapper has no independent review. Strong whole-vault rollback
+protection, guaranteed memory/disk erasure, authenticated queue/identity rotation,
+cover traffic, redundant routers, MIXNET and an authenticated production release
+channel remain unavailable. No perfect security, anonymity or comparative superiority
+is claimed. See [threat model](THREAT_MODEL.md) and [milestones](MILESTONES.md).
+
+## CLI and configuration
+
+`private-messenger --vault PATH COMMAND` uses a specified encrypted profile;
+`private-chat NAME` is the installed equivalent of `./chat NAME`. The default
+one-shot CLI vault is `~/.private-messenger/state.vault`, distinct from chat profiles.
+Commands: `register NAME`, `unlock`, `identity`, `address [--server URI]`,
+`connect INVITATION`, `requests`, `accept ID`, `verify ID [--confirm FINGERPRINT]`,
+`contacts`, `send ID TEXT`, `listen`, `inbox`, `history ID`, `network`, `servers`,
+`status`, `backup PATH`, `restore PATH`, `quit`. `rotate ID` explicitly reports BLOCKED.
+`register` is local only. `unlock` opens a shell; `listen` receives without stdin.
+
+The default router is the independently operated Swiss Urban-Network relay:
+
+```text
+smp://LtowhzwGvh3lqlFvMqxCTPmZ_OzcwOq_NCsNG7ya1lc=@urban-network.dyndns.org:5224
+```
+
+Geography is not a security guarantee; see [server evidence](SERVER_SELECTION_CS.md).
+`servers URI` adds an explicit pin. New local receive queues use the first configured
+router; invitations contain the peer's receive router. No availability fallback is
+performed. A password required for NEW can be imported with
+`servers URI --basic-auth-file PATH` (private 0600 file). This public router creation
+password is distinct from the vault secret, not included in invitations.
+The default operator password is fetched over CA-validated HTTPS only if not cached.
+Its website can block Tor; import credentials out of band in that case. **No DIRECT
+fallback occurs**, including for website discovery.
+
+Quit the shell before changing network mode for that profile:
+
+```bash
+.venv/bin/private-messenger --vault "$HOME/.local/share/private-messenger/secure-profiles/alice.vault" network TOR --proxy-host 127.0.0.1 --proxy-port 9050
+./chat Alice
+```
+
+A literal proxy IP prevents proxy-host DNS lookup. DIRECT reveals the source IP to
+the router. Tor conceals that IP from the router under its assumptions, while
+routers still observe queue activity, timing and volume. No telemetry or analytics.
+
+`backup PATH` writes an encrypted snapshot protected by the same passphrase.
+`restore SOURCE` requires a new destination vault and the original passphrase.
+It does not overwrite files. Re-pair restored contacts using new invitations.
+History, backups and Python memory can retain plaintext/keys; PFS does not erase them.
+
+Low-level `smp --help` commands remain available for opaque transport diagnostics.
+They do not establish or certify application encryption and are distinct from `send ID`.
+The automated `scripts/demo_alice_bob.sh` and `scripts/demo_swiss.sh` are transport
+fixtures, not the new authenticated chat flow.
 
 ## Verification and releases
 
 ```bash
 bash scripts/check.sh
-PM_PUBLIC_SMP_SERVER='smp://PIN@HOST:PORT' .venv/bin/pytest -q -m public
-.venv/bin/python scripts/test_local_reference.py /path/to/unmodified/smp-server
-.venv/bin/python scripts/test_real_tor.py --server 'smp://PIN@HOST:PORT'
+bash scripts/check_crypto.sh
+PM_PUBLIC_SECURE_MESSENGER=1 .venv/bin/pytest -q tests/integration/test_secure_messenger.py -k DIRECT
+# Real Tor proxy plus an independently obtained optional private NEW password file:
+PM_PUBLIC_SECURE_MESSENGER=1 PM_SECURE_TOR_PORT=9050 PM_ROUTER_AUTH_FILE=/private/new-password .venv/bin/pytest -q tests/integration/test_secure_messenger.py -k TOR
+.venv/bin/python scripts/bench_crypto.py
 ```
 
-Public tests are opt-in; tests against an unmodified local router have a separate
-marker. The local runner uses a disposable unprivileged network namespace and
-requires user namespaces to be enabled. The Tor runner uses an already installed
-Tor, an ephemeral private directory and only its own process. Neither installs a
-system service. [VERIFICATION.md](VERIFICATION.md) records actual runs and gaps.
-
-See [RELEASING.md](RELEASING.md) for reproducible build scope, signed manifests and
-the future multi-party/transparency design. Source license: AGPL-3.0-or-later.
+Real public/local-reference integration tests are opt-in and labeled separately
+from mock-relay application tests. [VERIFICATION.md](VERIFICATION.md) records actual
+results. [RELEASING.md](RELEASING.md) covers platform wheels, source builds, manifests,
+signing tools and remaining reproducibility limits. No established production
+signing identity or automatic updater exists. Own source is AGPL-3.0-or-later;
+the combined native backend includes AGPL-3.0-only dependencies and notices.

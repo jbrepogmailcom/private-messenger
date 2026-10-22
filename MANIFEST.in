@@ -1,5 +1,10 @@
 include README.md SECURITY.md THREAT_MODEL.md PROTOCOL_NOTES.md MILESTONES.md
 include VERIFICATION.md RELEASING.md requirements*.lock LICENSE
 include TEST_TWO_CLIENTS_CS.md SERVER_SELECTION_CS.md
+include CRYPTO_DEPENDENCIES.md SESSION_PROTOCOL.md chat chat-legacy
+include native/Cargo.toml native/Cargo.lock native/rust-toolchain.toml
+recursive-include native/src *.rs
+recursive-include native/tests *.rs
 recursive-include scripts *.py *.sh
 recursive-include tests *.py
+global-exclude *.so

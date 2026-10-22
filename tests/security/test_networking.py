@@ -92,3 +92,20 @@ def test_tor_fails_closed_without_direct_fallback(monkeypatch):
 def test_onion_does_not_resolve_directly():
     with pytest.raises(ValueError):
         Network().connect(Server("example.onion", 5223, bytes(32)))
+
+
+def test_swiss_password_discovery_tor_failure_never_uses_direct_http(monkeypatch):
+    from private_messenger.networking.swiss import download_public_password
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Tor website discovery attempted direct DNS/HTTP fallback")
+
+    monkeypatch.setattr(socket, "create_connection", forbidden)
+    monkeypatch.setattr("urllib.request.build_opener", forbidden)
+    with pytest.raises(OSError):
+        download_public_password(Network("TOR", "127.0.0.1", port, 1))

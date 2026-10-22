@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "private-messenger"
-version = "0.1.0"
-description = "Independent experimental Python SMP transport"
+version = "0.2.0"
+description = "Independent experimental SMP messenger with a pinned native ratchet backend"
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 dependencies = [
@@ -19,9 +19,13 @@ dev = ["pytest==9.1.1", "hypothesis==6.170.5", "ruff==0.17.1",
 
 [project.scripts]
 private-messenger = "private_messenger.cli:main"
+private-chat = "private_messenger.messaging.secure_terminal:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+private_messenger = ["_crypto_native.abi3.so"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -5,4 +5,5 @@ export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
 export PYTHONHASHSEED=0
 export TZ=UTC
 export LC_ALL=C.UTF-8
+bash scripts/build_crypto.sh
 .venv/bin/python -m build --wheel --sdist "$@"
