@@ -80,13 +80,11 @@ def messaging_network(vault, progress=None):
         return
     binary = shutil.which("tor")
     if binary is None:
-        raise TorUnavailable(
-            "Tor není nainstalovaný. Nainstaluj tor nebo nastav vlastní SOCKS proxy."
-        )
+        raise TorUnavailable("Tor is not installed. Install tor or configure your own SOCKS proxy.")
     # TemporaryDirectory creates an unpredictable 0700 child, never a shared fixed file.
     ram = Path("/dev/shm")  # noqa: S108  # nosec B108
     if not ram.is_dir():
-        raise TorUnavailable("Pro spravovaný Tor chybí /dev/shm; nastav vlastní Tor SOCKS proxy.")
+        raise TorUnavailable("Managed Tor requires /dev/shm; configure your own Tor SOCKS proxy.")
     with tempfile.TemporaryDirectory(prefix="pm-tor-", dir=ram) as directory:
         root = Path(directory)
         data = root / "data"
@@ -103,7 +101,7 @@ def messaging_network(vault, progress=None):
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
         if progress:
-            progress("Spouštím vlastní Tor; čekám na připojení k síti…")
+            progress("Starting Tor; waiting for a network connection…")
         # Discovered installed Tor, fixed arguments, no shell or user-provided executable.
         process = subprocess.Popen(  # noqa: S603  # nosec B603
             [
@@ -143,10 +141,12 @@ def messaging_network(vault, progress=None):
                     continue
                 chunk = os.read(process.stdout.fileno(), 8192)
                 if not chunk:
-                    raise TorUnavailable("Tor skončil před připojením. Přímé spojení je zakázané.")
+                    raise TorUnavailable(
+                        "Tor exited before connecting. Direct connections are disabled."
+                    )
                 pending += chunk
                 if len(pending) > 32768:
-                    raise TorUnavailable("Neočekávaný výstup Toru; připojení bylo zastaveno.")
+                    raise TorUnavailable("Unexpected Tor output; connection stopped.")
                 while b"\n" in pending:
                     line, pending = pending.split(b"\n", 1)
                     match = re.search(rb"Bootstrapped (\d{1,3})%", line)
@@ -156,7 +156,7 @@ def messaging_network(vault, progress=None):
                             progress(f"Tor: {percent} %")
                         ready = percent == 100
             if not ready:
-                raise TorUnavailable("Tor se nepřipojil včas. Přímé spojení je zakázané.")
+                raise TorUnavailable("Tor bootstrap timed out. Direct connections are disabled.")
             drain = threading.Thread(target=_discard_output, args=(process.stdout,), daemon=True)
             drain.start()
             yield Network("TOR", "127.0.0.1", port, timeout=45)

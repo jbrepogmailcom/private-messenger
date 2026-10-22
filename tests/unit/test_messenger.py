@@ -207,11 +207,11 @@ def test_guided_chat_pairing_verification_and_plain_text_without_internal_ids(ap
     a.handle("/verify Bob")
     b.handle("/verify")
     assert a.pending_verification[1] == b.pending_verification[1]
-    a.handle("/ne")
+    a.handle("/no")
     assert not alice.contact(aid)["verified"]
     a.handle("/verify")
-    a.handle("/ano")
-    b.handle("/ano")
+    a.handle("/yes")
+    b.handle("/yes")
     assert alice.contact(aid)["verified"] and bob.contact(bid)["verified"]
     assert resumed == [bid]
     text = "Ahoj Bobe! \"Uvozovka a apostrof nejsou problém: don't 🐴"
@@ -224,7 +224,7 @@ def test_guided_chat_pairing_verification_and_plain_text_without_internal_ids(ap
     assert event["body"] == text
     b.received(bid, event)
     assert text in bob_output[-1]
-    assert "čekám na potvrzení příjemce" in alice_output[-1]
+    assert "waiting for recipient confirmation" in alice_output[-1]
     assert not any(line.startswith('{"') for line in alice_output + bob_output)
     # A single existing contact remains usable immediately after restarting the UI.
     restarted = ChatUI(bob, bob_output.append)
@@ -246,18 +246,18 @@ def test_chat_rejects_ambiguous_names_and_does_not_retarget_verification(applica
         put_contact(db, original)
         put_contact(db, duplicate)
     ui = ChatUI(alice, lambda text: None)
-    with pytest.raises(ValueError, match="konkrétní kontakt"):
+    with pytest.raises(ValueError, match="specific contact"):
         ui.handle("/verify Bob")
-    with pytest.raises(ValueError, match="konkrétní kontakt"):
+    with pytest.raises(ValueError, match="specific contact"):
         ui.handle("/accept Bob")
-    with pytest.raises(ValueError, match="konkrétní kontakt"):
+    with pytest.raises(ValueError, match="specific contact"):
         ui.handle("Ahoj")
     ui.handle("/verify " + aid)
     ui.handle("/chat " + duplicate["id"])
     assert ui.pending_verification is None
-    # A stale 'ano' after selecting someone else cannot verify either contact.
+    # A stale 'yes' after selecting someone else cannot verify either contact.
     with pytest.raises(ValueError, match="/verify"):
-        ui.handle("/ano")
+        ui.handle("/yes")
     assert not alice.contact(aid)["verified"]
     assert not alice.contact(duplicate["id"])["verified"]
     assert alice.history(aid) == []
@@ -270,7 +270,7 @@ def test_chat_parser_errors_are_short_and_damaged_exports_are_never_sent(applica
     ui = ChatUI(alice, lambda text: None)
     with pytest.raises(ValueError):
         ui.handle('/add {"invitation": "PMS2:TRUNCATED"')
-    with pytest.raises(ValueError, match="Nápověda"):
+    with pytest.raises(ValueError, match="Help"):
         ui.handle("/send")
     assert alice.history(aid) == []
 
@@ -280,14 +280,14 @@ def test_slash_commands_and_plain_words_have_distinct_meanings(application_pair)
     aid, _ = connect(application_pair)
     ui = ChatUI(alice, lambda text: None)
     # Even words which name commands are ordinary messages without a leading slash.
-    for word in ("help", "contacts", "verify", "quit", "ano"):
+    for word in ("help", "contacts", "verify", "quit", "yes"):
         assert ui.handle(word) is True
     assert [item["body"] for item in alice.history(aid)] == [
         "help",
         "contacts",
         "verify",
         "quit",
-        "ano",
+        "yes",
     ]
     before = alice.history(aid)
     with pytest.raises(ValueError, match="/help"):
@@ -338,7 +338,7 @@ def test_add_charlie_while_bob_is_selected_and_choose_from_saved_contacts(
                 ui.handle("/verify")
             assert a.pending_verification[1] == c.pending_verification[1]
             for ui in (a, c):
-                ui.handle("/ano")
+                ui.handle("/yes")
             a.handle("/chat")
             assert a.contact_choices == (aid, cid)
             assert any("1. Bob" in line for line in output)
@@ -353,7 +353,7 @@ def test_add_charlie_while_bob_is_selected_and_choose_from_saved_contacts(
                 assert event["event"] == "receipt"
             assert event["body"] == "Ahoj Charlie, pouze pro tebe"
             assert alice.history(aid) == []
-            with pytest.raises(ValueError, match="číslo"):
+            with pytest.raises(ValueError, match="number"):
                 a.handle("/chat 99")
             assert a.selected == cid
             a.handle("/contacts")
@@ -418,18 +418,18 @@ def test_delete_confirmation_cancelled_selection_and_unused_invitation(applicati
     retired = []
     ui = ChatUI(alice, lambda text: None, on_deleting=retired.append)
     ui.handle("/del Bob")
-    ui.handle("/ne")
+    ui.handle("/no")
     assert alice.contact(aid)["state"] == "active"
     assert retired == []
     ui.handle("/del Bob")
     ui.handle("/chat " + unused["id"])
     with pytest.raises(ValueError, match="/verify"):
-        ui.handle("/ano")
+        ui.handle("/yes")
     assert alice.contact(aid)["state"] == "active"
     ui.handle("/contacts --all")
     number = ui.contact_choices.index(unused["id"]) + 1
     ui.handle(f"/del {number}")
-    ui.handle("/ano")
+    ui.handle("/yes")
     assert retired == [unused["id"]]
     assert ui.selected is None
     assert ui.contact_choices == ()
@@ -440,7 +440,7 @@ def test_delete_confirmation_cancelled_selection_and_unused_invitation(applicati
     with pytest.raises(ValueError, match="unknown contact"):
         alice.contact(unused["id"])
     ui.handle("/del Bob")
-    ui.handle("/ano")
+    ui.handle("/yes")
     assert alice.all_contacts() == []
 
 
@@ -459,14 +459,14 @@ def test_failed_remote_delete_retires_crypto_and_survives_restart_for_retry(
     output = []
     ui = ChatUI(alice, output.append)
     ui.handle("/del")
-    ui.handle("/ano")
+    ui.handle("/yes")
     pending = alice.contact(aid)
     assert pending["state"] == "deleting"
     assert pending["native"] is None and pending["sender_private"] is None
     assert pending["outgoing"] is None and "bundle" not in pending
     assert "invitation" not in pending
     assert_no_contact_messages(alice.vault, aid)
-    assert any("Smazání SMP fronty se nepodařilo potvrdit" in text for text in output)
+    assert any("SMP queue deletion could not be confirmed" in text for text in output)
     with pytest.raises(ValueError):
         alice.send(aid, "a deleted ratchet cannot resume")
     with pytest.raises(ValueError, match="pending deletion"):
@@ -477,7 +477,7 @@ def test_failed_remote_delete_retires_crypto_and_survives_restart_for_retry(
     monkeypatch.setattr(fake, "delete_queue", delete_queue)
     with Vault(snapshot, "Alice password") as reopened, Messenger(reopened) as restored:
         resumed = ChatUI(restored, output.append)
-        resumed.handle("/del")  # Already confirmed durable intent: retry, no second /ano.
+        resumed.handle("/del")  # Already confirmed durable intent: retry, no second /yes.
         assert restored.all_contacts() == []
         assert_no_contact_messages(reopened, aid)
 
@@ -536,19 +536,19 @@ def test_local_only_delete_is_explicit_and_never_contacts_server(
     output = []
     ui = ChatUI(alice, output.append)
     ui.handle("/del Bob --local")
-    assert "Fronta na serveru zůstane" in output[-1]
+    assert "The server queue will remain" in output[-1]
     assert alice.contact(aid)["state"] == "active"
-    ui.handle("/ne")
+    ui.handle("/no")
     assert alice.contact(aid)["state"] == "active"
     if pending:
         alice.begin_contact_deletion(aid)
     ui.handle("/del Bob --local")
     assert ui.pending_deletion == (aid, True)
-    ui.handle("/ano")
+    ui.handle("/yes")
     assert alice.all_contacts() == []
     assert_no_contact_messages(alice.vault, aid)
     assert sid in queues  # No claim of remote deletion, and all local queue keys are gone.
-    assert any("pouze místně; fronta na serveru nebyla odstraněna" in text for text in output)
+    assert any("locally only; the server queue was not removed" in text for text in output)
 
 
 def test_chat_discards_receiver_events_queued_during_deletion(application_pair, monkeypatch):
@@ -580,7 +580,7 @@ def test_chat_discards_receiver_events_queued_during_deletion(application_pair, 
     def inputs(events, stop):
         if ready.wait(5):
             events.put(("input", "/del Bob"))
-            events.put(("input", "/ano"))
+            events.put(("input", "/yes"))
             finished.wait(5)
         events.put(("input", "/quit"))
 

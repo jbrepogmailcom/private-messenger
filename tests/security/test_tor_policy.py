@@ -65,7 +65,7 @@ def test_external_proxy_error_never_starts_owned_tor_or_direct_dns(monkeypatch):
 def test_missing_tor_fails_before_yield_or_any_destination_connection(monkeypatch):
     monkeypatch.setattr(tor.shutil, "which", lambda _: None)
     with (
-        pytest.raises(tor.TorUnavailable, match="nainstalovaný"),
+        pytest.raises(tor.TorUnavailable, match="not installed"),
         tor.messaging_network(Settings()),
     ):
         raise AssertionError("unavailable Tor yielded a network")

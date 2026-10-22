@@ -92,7 +92,7 @@ our source archive contains the binding and pins, not a vendored dependency tree
 For an offline source release, separately vendor and include the full pinned
 Cargo dependency sources/notices using Cargo's supported vendoring workflow.
 
-`bash scripts/build.sh --no-isolation --outdir dist/0.2.4` builds the backend before
+`bash scripts/build.sh --no-isolation --outdir dist/0.2.5` builds the backend before
 packaging. Wheels contain `_crypto_native.abi3.so` and are **platform tagged** (the
 current setuptools build conservatively tags its building Python version).
 They must not be represented as pure Python universal wheels. Source archives

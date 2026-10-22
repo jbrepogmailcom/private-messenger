@@ -129,10 +129,16 @@ def run_chat(vault: Vault, role: str) -> int:
             suffix = f" [{state}]" if direction == "out" else ""
             say(f"{who}: {safe_terminal(text)}{suffix}")
 
-    print(f"Přihlášen(a): {role} · protějšek: {peer}", flush=True)
-    print("Test na jednom počítači · švýcarský SMP · DIRECT (server vidí IP).", flush=True)
-    print("Lokálně předané klíče, NaCl Box. Bez ratchetu, PFS/PCS a PQ ochrany.", flush=True)
-    print("Piš zprávu a Enter. /address = adresa, /history = historie, /quit = konec.", flush=True)
+    print(f"Signed in: {role} · contact: {peer}", flush=True)
+    print("Same-computer test · Swiss SMP · DIRECT (server sees your IP).", flush=True)
+    print(
+        "Locally exchanged NaCl Box keys. No ratchet, PFS/PCS or post-quantum protection.",
+        flush=True,
+    )
+    print(
+        "Type a message and press Enter. /address = invitation, /history = history, /quit = exit.",
+        flush=True,
+    )
     history()
     receiving.start()
     typing.start()
@@ -153,12 +159,12 @@ def run_chat(vault: Vault, role: str) -> int:
                 elif value == "/address":
                     say(json.dumps(public_address(profile), ensure_ascii=True))
                 elif value.startswith("/"):
-                    say("Příkazy: /address, /history, /quit. Jinak napiš přímo zprávu.")
+                    say("Commands: /address, /history, /quit. Otherwise, type a message directly.")
                 elif value:
                     try:
                         mid, ciphertext = messages.prepare(value)
                     except ValueError:
-                        say("Zpráva může mít nejvýše 8192 bajtů v UTF-8.")
+                        say("A message can contain at most 8192 UTF-8 bytes.")
                         continue
                     try:
                         if sending.transport is None:
@@ -166,14 +172,17 @@ def run_chat(vault: Vault, role: str) -> int:
                         messages.outgoing_state(mid, "acceptance_unknown")
                         sending.send_ciphertext(sender_id, ciphertext, sender_key)
                         messages.outgoing_state(mid, "server_accepted")
-                        say("✓ Zprávu přijal server. Přijetí protějškem není potvrzené.")
+                        say("✓ Message accepted by the server. Recipient delivery is unconfirmed.")
                     except AmbiguousSendError:
-                        say("Výsledek odeslání není znám. Zprávu automaticky neopakuji.")
+                        say(
+                            "The send result is unknown. "
+                            "The message will not be retried automatically."
+                        )
                     except RouterError:
                         messages.outgoing_state(mid, "rejected")
-                        say("Server zprávu odmítl. Podrobnosti jsou v /history.")
+                        say("The server rejected the message. See /history for details.")
                     except (OSError, EOFError, SSL.Error):
-                        say("Spojení selhalo. Stav zprávy je uložen v /history.")
+                        say("Connection failed. Message status is saved in /history.")
                 elif interactive:
                     print(f"{role}> ", end="", flush=True)
             elif kind == "delivery":
@@ -182,7 +191,10 @@ def run_chat(vault: Vault, role: str) -> int:
                     fresh, text = messages.receive(delivery)
                 except (ValueError, CryptoError):
                     decision.put(False)
-                    say("Ověření zprávy selhalo. Příjem zastaven, zpráva nebyla potvrzena.")
+                    say(
+                        "Message verification failed. Reception stopped; "
+                        "the message was not acknowledged."
+                    )
                     result = 1
                     break
                 decision.put(True)
@@ -191,13 +203,13 @@ def run_chat(vault: Vault, role: str) -> int:
             elif kind == "acked":
                 vault.acknowledged("terminal-demo", value)
             elif kind == "connected":
-                say(f"Příjem připraven · SMP v{value}. Můžeš psát.")
+                say(f"Ready to receive · SMP v{value}. You can start typing.")
             elif kind == "reconnecting":
-                say("Spojení přerušeno; obnovuji příjem přes stejný server.")
+                say("Disconnected; reconnecting to the same server.")
             elif kind == "input_error":
-                say("Zpráva je příliš dlouhá; nebyla odeslána.")
+                say("Message is too long; it was not sent.")
             elif kind == "fatal":
-                say("Ověření serveru nebo fronty selhalo. Spojení zastaveno.")
+                say("Server or queue authentication failed. Connection stopped.")
                 result = 1
                 break
     except KeyboardInterrupt:
@@ -206,40 +218,42 @@ def run_chat(vault: Vault, role: str) -> int:
         stop.set()
         sending.close()
         receiving.join(timeout=9)
-        print("\nOdhlášeno. Historie a klíče zůstávají v šifrovaném úložišti.", flush=True)
+        print("\nSigned out. History and keys remain in encrypted storage.", flush=True)
     return result
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Dva terminály, lokálně spárovaný SMP test")
+    parser = argparse.ArgumentParser(description="Two-terminal, locally paired SMP test")
     parser.add_argument("role", type=str.capitalize, choices=ROLES)
     parser.add_argument(
         "--directory",
         type=Path,
         default=Path.home() / ".local/share/private-messenger/terminal-demo",
     )
-    parser.add_argument("--passphrase-file", type=Path, help="0600 soubor, pro automatické testy")
+    parser.add_argument("--passphrase-file", type=Path, help="0600 file for automated tests")
     parser.add_argument(
         "--address",
         action="store_true",
-        help="po odemčení pouze vypíše veřejnou adresu; bez síťového spojení",
+        help="show only the public address after unlocking; no network connection",
     )
     args = parser.parse_args(argv)
     try:
         new = not is_ready(args.directory)
         if new and args.address:
-            print("Profily ještě nejsou vytvořené. Nejprve spusť chat Alice.", file=sys.stderr)
+            print("Profiles do not exist yet. Start chat Alice first.", file=sys.stderr)
             return 1
         if new:
-            print("První spuštění připraví místní testovací profily Alice i Bob.", flush=True)
+            print(
+                "The first launch prepares local test profiles for both Alice and Bob.", flush=True
+            )
         if args.passphrase_file:
             secret = read_private(args.passphrase_file, 4096).decode().rstrip("\n")
         else:
-            secret = getpass.getpass("Heslo obou testovacích profilů: ")
-            if new and getpass.getpass("Zopakuj heslo: ") != secret:
+            secret = getpass.getpass("Password for both test profiles: ")
+            if new and getpass.getpass("Repeat password: ") != secret:
                 raise ValueError("passphrases do not match")
         if new:
-            print("Připravuji šifrované profily a fronty na švýcarském SMP…", flush=True)
+            print("Preparing encrypted profiles and queues on the Swiss SMP server…", flush=True)
             provision(args.directory, secret, Server.parse(SERVER), download_public_password())
         with Vault(profile_path(args.directory, args.role), secret) as vault:
             secret = None
@@ -249,15 +263,15 @@ def main(argv=None) -> int:
             return run_chat(vault, args.role)
     except BlockingIOError:
         print(
-            "Profil už je otevřený. V běžícím chatu použij /address; "
-            "po aktualizaci jej nejprve ukonči přes /quit.",
+            "The profile is already open. Use /address in the running chat; "
+            "after an update, first exit the old process with /quit.",
             file=sys.stderr,
         )
         return 1
     except (ValueError, OSError, EOFError, CryptoError, SSL.Error):
         print(
-            "Spuštění selhalo: zkontroluj heslo, připojení a dostupnost SMP. "
-            "Při prvním spuštění nech nejprve dokončit přípravu v jednom okně.",
+            "Startup failed: check the password, connection and SMP server availability. "
+            "On first launch, let setup finish in one terminal before opening the other.",
             file=sys.stderr,
         )
         return 1

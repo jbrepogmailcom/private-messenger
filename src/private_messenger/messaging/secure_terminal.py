@@ -113,13 +113,13 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
         ui = ChatUI(messenger, say, human=is_tty, on_verified=verified, on_deleting=deleting)
         if interactive:
             print(
-                f"Přihlášen(a): {safe(name)} · experimentální verze bez nezávislého auditu.",
+                f"Signed in: {safe(name)} · experimental version without an independent audit.",
                 flush=True,
             )
             print(
-                f"SMP · síť: {messenger.network.mode}"
+                f"SMP · network: {messenger.network.mode}"
                 if is_tty
-                else f"Kryptografie: {SUITE} · síť: {messenger.network.mode}",
+                else f"Cryptography: {SUITE} · network: {messenger.network.mode}",
                 flush=True,
             )
             ui.welcome()
@@ -183,7 +183,7 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                         CryptoError,
                         CryptoUnavailable,
                     ) as exc:
-                        say("Chyba: " + safe(str(exc)))
+                        say("Error: " + safe(str(exc)))
                 elif kind == "delivery":
                     cid, delivery, decision = value
                     try:
@@ -194,12 +194,12 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                         contact = messenger.contact(cid)
                         if is_tty and contact["state"] == "active" and not contact["verified"]:
                             say(
-                                f"{ui.label(cid)}: zpráva čeká na ověření. "
-                                f"Napiš /verify {cid} a porovnej otisk."
+                                f"{ui.label(cid)}: a message is waiting for verification. "
+                                f"Use /verify {cid} and compare the fingerprint."
                             )
                         else:
                             say(
-                                f"[{cid}] Ověření selhalo; fronta nebyla potvrzena: "
+                                f"[{cid}] Verification failed; the queue was not acknowledged: "
                                 + safe(str(exc))
                             )
                         prompt()
@@ -212,20 +212,20 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                 elif kind == "connected":
                     cid, version = value
                     say(
-                        f"{ui.label(cid)}: příjem zpráv je připraven."
+                        f"{ui.label(cid)}: ready to receive messages."
                         if is_tty
-                        else f"Příjem připraven [{cid}] · SMP v{version}."
+                        else f"Ready to receive [{cid}] · SMP v{version}."
                     )
                 elif kind == "reconnecting":
                     say(
-                        f"{ui.label(value)}: obnovuji spojení."
+                        f"{ui.label(value)}: reconnecting."
                         if is_tty
-                        else f"[{value}] Obnovuji spojení přes stejný ověřený server."
+                        else f"[{value}] Reconnecting through the same verified server."
                     )
                 elif kind == "fatal":
-                    say(f"[{value}] Ověření serveru nebo fronty selhalo; příjem zastaven.")
+                    say(f"[{value}] Server or queue authentication failed; reception stopped.")
                 elif kind == "input_error":
-                    say("Příkaz je příliš dlouhý; nebyl proveden.")
+                    say("Command is too long; it was not executed.")
                 if kind not in ("idle", "acked"):
                     prompt()
                 if time.monotonic() - last_flush > 0.5:
@@ -244,7 +244,7 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Samostatný SMP messenger s ověřenými kontakty")
+    parser = argparse.ArgumentParser(description="Independent SMP messenger with verified contacts")
     parser.add_argument("name")
     parser.add_argument(
         "--directory",
@@ -256,16 +256,16 @@ def main(argv=None) -> int:
         "--network",
         choices=["TOR", "DIRECT"],
         default="TOR",
-        help="výchozí TOR; DIRECT je výslovný režim odhalující IP routeru",
+        help="TOR by default; explicit DIRECT mode exposes your IP to the router",
     )
-    parser.add_argument("--tor-proxy-host", help="IP vlastní Tor SOCKS proxy")
-    parser.add_argument("--tor-proxy-port", type=int, help="port vlastní Tor SOCKS proxy")
+    parser.add_argument("--tor-proxy-host", help="IP address of your own Tor SOCKS proxy")
+    parser.add_argument("--tor-proxy-port", type=int, help="port of your own Tor SOCKS proxy")
     parser.add_argument(
-        "--address", action="store_true", help="vytvoř jednorázovou pozvánku a skonči"
+        "--address", action="store_true", help="create a one-time invitation and exit"
     )
     args = parser.parse_args(argv)
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", args.name):
-        parser.error("profil musí mít 1–32 znaků: písmena, číslice, _ nebo -")
+        parser.error("profile name must contain 1–32 ASCII letters, digits, _ or -")
     path = args.directory / (args.name.lower() + ".vault")
     new = not path.exists()
     try:
@@ -273,9 +273,9 @@ def main(argv=None) -> int:
         if args.passphrase_file:
             secret = read_private(args.passphrase_file, 4096).decode().rstrip("\n")
         else:
-            secret = getpass.getpass(f"Heslo profilu {args.name}: ")
-            if new and getpass.getpass("Zopakuj heslo: ") != secret:
-                raise ValueError("hesla se neshodují")
+            secret = getpass.getpass(f"Password for {args.name}: ")
+            if new and getpass.getpass("Repeat password: ") != secret:
+                raise ValueError("passwords do not match")
         with Vault(path, secret, create=new) as vault:
             secret = None
             if new:
@@ -290,7 +290,7 @@ def main(argv=None) -> int:
                 return 0
             return run_shell(vault)
     except (ValueError, OSError, EOFError, SSL.Error, CryptoError, CryptoUnavailable) as exc:
-        print("Chyba: " + safe(str(exc)), file=sys.stderr)
+        print("Error: " + safe(str(exc)), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 130

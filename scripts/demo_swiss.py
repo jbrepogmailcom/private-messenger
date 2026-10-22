@@ -17,14 +17,14 @@ from private_messenger.storage.vault import atomic_write
 
 
 def main() -> int:
-    print("Připravuji test přes Urban-Network ve Švýcarsku…", flush=True)
+    print("Preparing a test through Urban-Network in Switzerland…", flush=True)
     try:
         password = download_public_password()
         with tempfile.TemporaryDirectory(prefix="pm-swiss-demo-") as directory:
             auth = Path(directory) / "router.auth"
             atomic_write(auth, password, overwrite=False)
             print(
-                "Spouštím oddělené klienty Alice a Bob. Test potrvá přibližně půl minuty…",
+                "Starting separate Alice and Bob clients. The test takes about half a minute…",
                 flush=True,
             )
             result = demo(SERVER, auth)
@@ -41,13 +41,14 @@ def main() -> int:
             raise ValueError("incomplete transport test")
     except (ValueError, OSError, TimeoutError, RuntimeError, subprocess.SubprocessError):
         print(
-            "Test se nezdařil. Ověř internetové připojení a dostupnost Urban-Network.", flush=True
+            "The test failed. Check your internet connection and Urban-Network availability.",
+            flush=True,
         )
         return 1
-    print("✓ Alice a Bob byli vytvořeni jako oddělené testovací profily.")
-    print("✓ Alice předala Bobovi data online i během jeho odpojení.")
-    print("✓ Opakované doručení, potvrzení a úklid prošly.")
-    print("Hotovo. Pro interaktivní textový test spusť ./chat Alice a ./chat Bob ve dvou oknech.")
+    print("✓ Alice and Bob were created as separate test profiles.")
+    print("✓ Alice sent Bob data both online and while he was disconnected.")
+    print("✓ Redelivery, acknowledgement and cleanup passed.")
+    print("Done. For interactive text chat, run ./chat Alice and ./chat Bob in two terminals.")
     return 0
 
 

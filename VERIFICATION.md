@@ -129,7 +129,7 @@ from a private file, validates it before network contact and does not put the
 password in process arguments or invitations. The updated default suite passed
 **34 tests, 15 skipped**; Ruff and Bandit passed. The original public/local matrix
 results above remain historical runs of their stated source. Detailed geographic
-evidence and operator-trust limits are in SERVER_SELECTION_CS.md. The distributions
+evidence and operator-trust limits are in SERVER_SELECTION.md. The distributions
 described above predate this follow-up and do not include this CLI option.
 
 ## Interactive local-pairing demo (2026-10-21)
@@ -348,7 +348,7 @@ Actual unmodified public Swiss SMP, default launcher test:
 — **1 passed in 182.44s**, no supplied router-password file. Alice/Bob started with
 separate encrypted profiles deliberately configured DIRECT, then logged in through
 plain `./chat NAME` without a network override. Both were automatically switched
-to TOR, each started its own actual Tor, and asserted `síť: TOR`. Signed pairing,
+to TOR, each started its own actual Tor, and asserted the TOR network status. Signed pairing,
 fingerprints (including delayed verification), Unicode traffic, encrypted receipts,
 Bob completely offline, both-process restart, replay with fresh router IDs and
 single history insertion all passed. Their encrypted guard state survived restart.
@@ -420,16 +420,16 @@ ratchet composition and their documented security limitations are unchanged.
 ## Slash commands and multiple contacts — 0.2.3, 2026-10-22
 
 All interactive chat commands now require `/`, including `/quit`, `/verify` and
-the explicit fingerprint confirmation `/ano` or rejection `/ne`. Bare words such
+the explicit fingerprint confirmation or rejection commands. Bare words such
 as `help`, `verify` and `quit` are ordinary message content. Unknown slash commands
 fail instead of becoming messages. The separate one-shot shell CLI is unchanged.
 
 `/address` generates a complete `/add NAME PMS2:…` command ready to copy into the
-peer's terminal. `/add KÓD`, `/add NAME KÓD`, `/add JSON_EXPORT` and the existing
+peer's terminal. `/add INVITATION`, `/add NAME INVITATION`, `/add JSON_EXPORT` and the existing
 `/connect` alias initiate an independently keyed contact without sending the code
 to the selected conversation. A guard blocks invitation markers/JSON exports and
 long Base32 fragments before message encryption/history/outbox insertion, including
-the reported `nový kontakt KÓD` mistake and accidental `/send Bob KÓD`.
+the reported plain-text invitation-paste mistake and accidental `/send Bob INVITATION`.
 
 `/chat` and `/contacts` display numbered saved contacts, excluding unused local
 invitations. `/chat NUMBER`, `/chat NAME` and `/chat ID` select the recipient shown
@@ -443,10 +443,10 @@ Actual public Urban-Network SMP over real Tor: **2 passed in 90.53s**:
 - `test_three_real_terminals_add_contact_choose_recipient_offline_restart` runs
   Alice, Bob and Charlie in three independent Python processes attached to real
   pseudo-terminals. After authenticated Alice/Bob pairing and bidirectional text,
-  Charlie generates `/address`. Alice's reported bare `nový kontakt KÓD` input is
+  Charlie generates `/address`. Alice's reported bare invitation-paste input is
   blocked while Bob is selected, and the actual generated `/add Charlie …`
   command initiates a separate conversation. The test compares complete native
-  fingerprints independently before `/ano`. `/contacts` lists Bob and Charlie;
+  fingerprints independently before explicit confirmation. `/contacts` lists Bob and Charlie;
   `/chat 1` and `/chat 2` update the prompt and deliver separate messages only to
   their intended recipient. Charlie replies; his history contains exactly his
   one intended incoming message; Bob's contains his three intended messages,
@@ -475,7 +475,7 @@ are separate from the actual three-terminal public-infrastructure run above.
 ## Contact removal and fresh pairing — 0.2.4, 2026-10-22
 
 `/del NAME`, `/del NUMBER` (from the displayed menu), and `/del` for the selected
-contact require explicit `/ano`; `/ne` or intervening commands cancel the prompt.
+contact require explicit confirmation; rejection or intervening commands cancel the prompt.
 The immutable local contact ID is bound to the confirmation. `/contacts --all`
 also exposes unused local invitations for the same deletion workflow.
 
@@ -534,3 +534,50 @@ The separate existing non-TTY public-Tor pairing/offline/replay test also passed
 during this follow-up. Temporary profiles and test-owned Tor were cleaned up;
 user profiles were not opened. This does not establish reliable bootstrap times
 or resistance to global traffic correlation.
+
+## English interface and publication documentation — 0.2.5, 2026-10-22
+
+All current application, legacy-demo and Tor status/error/help/password prompts
+are in English. Interactive confirmations use `/yes` and `/no`; the previous
+localized aliases are no longer commands. Ordinary text and Unicode message
+content remain unchanged. The existing verification, selection, cancellation,
+deletion, pending-state retry and invitation-paste protections remain in place.
+Historical sections above describe the interface at their stated source version.
+
+README now lists the implemented security/privacy properties, maps independence
+and remaining trust dependencies at each communication/distribution layer, and
+compares Telegram, Signal, Meta Messenger, SimpleX, Session, WhatsApp, Matrix and
+Briar using dated primary sources. It explicitly avoids claiming superiority over
+already encrypted/decentralized alternatives or independence from all authorities.
+The two-client and server-selection guides were translated into English and
+renamed; their local documentation/packaging references were updated.
+
+`bash scripts/check.sh`: **98 passed, 21 skipped in 77.80s**. Ruff lint/format,
+Bandit and runtime pip-audit passed; no known runtime vulnerabilities were found.
+The absent public-infrastructure opt-in accounts for integration skips; the
+application fixture tests use real native crypto and encrypted vaults with a
+mock relay, not public SMP. Subsequent lint/format and local Markdown link checks
+also passed after documentation and integration expectation updates.
+
+Actual public Urban-Network SMP v18 through real Tor:
+
+- The three-real-terminal Alice/Bob/Charlie test passed with English verification,
+  `/yes` confirmations, contact selection, deletion, fresh identities/queues and
+  fingerprints, new messages, restart and offline delivery. The initial combined
+  run reported one pass/one failure in 217.69s because the separate non-TTY test
+  still expected an old localized network-status string; it was a test expectation
+  mismatch, with the process emitting the correct English status.
+- After updating the non-TTY status and receipt expectations, its existing
+  pairing/late-verification/offline/restart/replay test passed in **34.79s**.
+
+Both runs used an explicitly configured external SOCKS port backed by their own
+installed test-owned Tor, with isolation and no DIRECT fallback. Bootstrap allowed
+300 seconds in the test harness; the application default remains 180 seconds.
+Temporary profiles/queues were cleaned up and only test-owned Tor processes were
+stopped. User profiles were not accessed. These are development checks, not an
+independent audit, managed-Tor bootstrap guarantee or anonymity proof.
+
+A limited pre-publication scan of 193 unique historical Git blobs found no
+high-confidence private-key/token markers or sensitive vault/key filenames.
+This is not a complete secret audit. The bundled default-router NEW authorization
+is intentionally public operator configuration, not a user's private credential.

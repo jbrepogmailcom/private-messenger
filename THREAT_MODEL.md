@@ -34,7 +34,7 @@ are not router registration fields. Initial requests contain encrypted display
 names before manual fingerprint verification, so trust invitation delivery too.
 
 The terminal's guided verification displays the complete fingerprint and accepts
-an explicit `/ano` only for that displayed contact and unchanged fingerprint.
+an explicit `/yes` only for that displayed contact and unchanged fingerprint.
 Selecting another conversation cancels the prompt. A unique name, local ID or
 number from the last displayed menu selects a contact; duplicate names fail closed.
 Number-to-ID mappings are frozen until another list is displayed, so a concurrent

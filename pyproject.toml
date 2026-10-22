@@ -4,8 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "private-messenger"
-version = "0.2.4"
+version = "0.2.5"
 description = "Independent experimental SMP messenger with a pinned native ratchet backend"
+readme = "README.md"
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 dependencies = [
@@ -17,6 +18,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest==9.1.1", "hypothesis==6.170.5", "ruff==0.17.1",
        "bandit==1.9.4", "pip-audit==2.10.1", "build==1.6.1"]
+
+[project.urls]
+Repository = "https://github.com/jbrepogmailcom/private-messenger"
+Issues = "https://github.com/jbrepogmailcom/private-messenger/issues"
+Security = "https://github.com/jbrepogmailcom/private-messenger/blob/main/SECURITY.md"
 
 [project.scripts]
 private-messenger = "private_messenger.cli:main"
