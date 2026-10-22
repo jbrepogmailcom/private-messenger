@@ -11,3 +11,8 @@ dist/
 *.lock
 !requirements*.lock
 demo-state/
+
+.work-crypto/
+native/target/
+*.so
+!native/Cargo.lock
