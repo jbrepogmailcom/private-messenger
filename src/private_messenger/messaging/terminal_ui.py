@@ -6,6 +6,8 @@ import re
 import shlex
 import unicodedata
 
+from OpenSSL import SSL
+
 
 def safe(text: str) -> str:
     return "".join(
@@ -78,19 +80,23 @@ def state_text(contact):
         "requested": "příchozí žádost: /accept",
         "waiting": "čekám na přijetí protistranou",
         "recovery_required": "po obnově je nutné nové spárování",
+        "deleting": "čeká na dokončení smazání fronty: /del",
     }.get(state, "navazování spojení není dokončeno")
 
 
 class ChatUI:
     """The selected recipient and verification prompt are local UI state only."""
 
-    def __init__(self, messenger, write, *, human=True, on_verified=None):
+    def __init__(self, messenger, write, *, human=True, on_verified=None, on_deleting=None):
         self.messenger = messenger
         self.write = write
         self.human = human
         self.on_verified = on_verified or (lambda cid: None)
+        self.on_deleting = on_deleting or (lambda cid: None)
         self.selected = None
+        self.require_selection = False
         self.pending_verification = None
+        self.pending_deletion = None
         self.contact_choices = ()
         usable = [c for c in messenger.all_contacts() if c["state"] != "invited"]
         if len(usable) == 1:
@@ -106,9 +112,13 @@ class ChatUI:
     def select(self, cid):
         if cid != self.selected:
             self.pending_verification = None
+            self.pending_deletion = None
         self.selected = cid
+        self.require_selection = cid is None
 
     def resolve(self, token=None, *, requested=False):
+        if token is None and not requested and self.selected is None and self.require_selection:
+            raise ValueError("Vyber protistranu ze seznamu /chat nebo příkazem /chat JMÉNO.")
         contacts = self.messenger.all_contacts()
         if token is not None:
             exact = [c for c in contacts if c["id"] == token]
@@ -143,13 +153,15 @@ class ChatUI:
             "nový kontakt: /add KÓD. Vlastní pozvánka: /address."
         )
 
-    def list_contacts(self, *, requested=False):
+    def list_contacts(self, *, requested=False, include_invitations=False):
         contacts = sorted(
             (
                 c
                 for c in self.messenger.all_contacts()
                 if (
-                    c["state"] == "requested" if requested else c["state"] not in ("new", "invited")
+                    c["state"] == "requested"
+                    if requested
+                    else include_invitations or c["state"] not in ("new", "invited")
                 )
             ),
             key=lambda c: (c["name"].casefold(), c["id"]),
@@ -204,7 +216,54 @@ class ChatUI:
             self.guidance(self.selected)
         else:
             self.list_contacts()
-        self.write("/add KÓD = nový kontakt · /chat = výběr protistrany · /help · /quit")
+        self.write("/add KÓD = nový kontakt · /chat = výběr · /del = smazání · /help · /quit")
+
+    def delete(self, cid, local_only=False):
+        peer = self.label(cid)
+        self.messenger.begin_contact_deletion(cid)
+        self.on_deleting(cid)
+        if self.selected == cid:
+            # Never silently start sending ordinary text to another remaining contact.
+            self.select(None)
+        self.contact_choices = ()
+        try:
+            result = self.messenger.delete_contact(cid, local_only=local_only)
+        except (ValueError, OSError, EOFError, SSL.Error) as exc:
+            if local_only:
+                self.write(
+                    f"{peer}: historie a konverzační klíče jsou odstraněné, "
+                    "ale dokončení místního smazání zbývajících přístupových údajů selhalo."
+                )
+            else:
+                self.write(
+                    f"{peer}: místní historie a konverzační klíče jsou odstraněné. "
+                    "Smazání SMP fronty se nepodařilo potvrdit; "
+                    "zbývají jen přístupové údaje k frontě pro dokončení smazání."
+                )
+            self.write("Důvod: " + safe(str(exc)))
+            suffix = " --local" if local_only else ""
+            self.write(f"Dokončení: /del {cid}{suffix} (lze i po restartu).")
+            if not local_only:
+                self.write(
+                    f"Úplně místně bez serveru: /del {cid} --local. "
+                    "Tím se vzdáš možnosti smazat tuto frontu na serveru."
+                )
+            return
+        if self.human:
+            self.write(f"Kontakt {peer} odstraněn včetně místní historie a klíčů.")
+            description = {
+                "server_deleted": "SMP server potvrdil smazání příchozí fronty.",
+                "local_only": "Smazáno pouze místně; fronta na serveru nebyla odstraněna.",
+                "server_unconfirmed": (
+                    "Server vrátil AUTH; fronta není dostupná, její smazání nelze potvrdit."
+                ),
+            }
+            self.write(description[result])
+            self.write(
+                "Pro test od začátku smaž kontakt i v druhém okně a vytvoř novou pozvánku /address."
+            )
+        else:
+            self.emit({"event": "contact_deleted", "id": cid, "queue": result})
 
     def verified(self, cid, confirmation):
         result = self.messenger.fingerprint(cid, confirmation)
@@ -254,7 +313,14 @@ class ChatUI:
         if line in ("/quit", "/exit"):
             return False
         pending, self.pending_verification = self.pending_verification, None
+        deletion, self.pending_deletion = self.pending_deletion, None
         if line.casefold() in ("/ano", "/ne", "/yes", "/no"):
+            if deletion is not None:
+                if line.casefold() in ("/ne", "/no"):
+                    self.write("Smazání zrušeno.")
+                else:
+                    self.delete(*deletion)
+                return True
             if pending is None:
                 raise ValueError("Nejprve zobraz otisk příkazem /verify a porovnej jej.")
             cid, expected = pending
@@ -277,6 +343,40 @@ class ChatUI:
             raise ValueError("Neznámý příkaz. Nápověda: /help")
         command = line[1:].split(maxsplit=1)[0]
         words = chat_words(line)
+        if command == "del":
+            local_only = words[-1] == "--local"
+            if local_only:
+                words.pop()
+            if len(words) > 2:
+                raise ValueError("Smazání: /del JMÉNO, /del ČÍSLO nebo /del pro vybraný kontakt.")
+            if len(words) == 2:
+                cid = self.choose(words[1])
+            elif self.selected:
+                cid = self.selected
+            else:
+                contacts = self.messenger.all_contacts()
+                if len(contacts) != 1:
+                    self.list_contacts(include_invitations=True)
+                    self.write("Smazání: /del ČÍSLO nebo /del JMÉNO.")
+                    return True
+                cid = contacts[0]["id"]
+            if self.messenger.contact(cid)["state"] == "deleting" and not local_only:
+                self.delete(cid)  # The persisted deletion was already explicitly confirmed.
+            else:
+                self.pending_deletion = (cid, local_only)
+                self.write(
+                    f"Smazat kontakt {self.label(cid)} [{cid}], jeho místní historii a klíče "
+                    + (
+                        "pouze místně? Fronta na serveru zůstane; její přístupové klíče se zahodí. "
+                        if local_only
+                        else "a vlastní příchozí SMP frontu? "
+                    )
+                    + "Potvrď /ano, zruš /ne."
+                )
+            return True
+        if words == ["contacts", "--all"]:
+            self.list_contacts(include_invitations=True)
+            return True
         if command in ("chat", "use"):
             if len(words) == 1:
                 self.list_contacts()
@@ -296,6 +396,9 @@ class ChatUI:
                 "pouze při shodě napište /ano. Při neshodě /ne.\n"
                 "4. Pište zprávy přímo, bez příkazu.\n"
                 "Výběr: /chat nebo /contacts vypíše seznam; /chat 2 vybere druhý kontakt.\n"
+                "Smazání: /del JMÉNO nebo /del ČÍSLO, potom /ano. /ne smazání zruší.\n"
+                "Nepoužité pozvánky: /contacts --all; pak je lze také odstranit přes /del ČÍSLO.\n"
+                "Bez kontaktování serveru: /del JMÉNO --local; ponechá frontu na serveru.\n"
                 "Další: /chat Bob; /send Bob TEXT; /history; /requests; /status; /quit."
             )
             return True
@@ -404,14 +507,14 @@ class ChatUI:
             sender = self.label(cid) if self.human else f"{self.label(cid)} [{cid}]"
             self.write(f"{sender}: {safe(event['body'])}")
         elif kind == "request":
-            if self.selected is None:
+            if self.selected is None and not self.require_selection:
                 self.select(cid)
             target = "" if self.selected == cid else " " + cid
             self.write(f"{self.label(cid)} žádá o spojení. Pro přijetí napiš /accept{target}.")
             if not self.human:
                 self.emit(self.messenger.fingerprint(cid))
         elif kind == "accept":
-            if self.selected is None:
+            if self.selected is None and not self.require_selection:
                 self.select(cid)
             self.write(f"{self.label(cid)} přijal spojení.")
             if self.human:

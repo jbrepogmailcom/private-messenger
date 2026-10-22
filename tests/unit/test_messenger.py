@@ -4,8 +4,11 @@ These tests are NOT evidence of SMP/public-server interoperability.
 """
 
 import copy
+import io
 import json
+import queue
 import secrets
+import threading
 import time
 from contextlib import ExitStack
 
@@ -19,7 +22,7 @@ from private_messenger.identity import register
 from private_messenger.messaging.secure_terminal import chat_words
 from private_messenger.messaging.service import Messenger
 from private_messenger.messaging.terminal_ui import ChatUI
-from private_messenger.smp.client import AmbiguousSendError
+from private_messenger.smp.client import AmbiguousSendError, RouterError
 from private_messenger.smp.queues import Delivery, ReceiveQueue
 from private_messenger.storage.vault import Vault
 
@@ -68,6 +71,8 @@ def application_pair(tmp_path, monkeypatch):
             )
 
         def delete_queue(self, key):
+            if key.sender_id not in queues:
+                raise RouterError(b"ERR AUTH")
             del queues[key.sender_id]
 
     monkeypatch.setattr("private_messenger.messaging.service.Client", FakeClient)
@@ -358,6 +363,235 @@ def test_add_charlie_while_bob_is_selected_and_choose_from_saved_contacts(
             a.handle("Ahoj Bobe, vybral jsem tě ze seznamu")
             assert alice.history(aid)[0]["body"] == "Ahoj Bobe, vybral jsem tě ze seznamu"
             assert len(alice.history(cid)) == 1
+
+
+def assert_no_contact_messages(vault, cid):
+    for statement in (
+        "SELECT count(*) FROM messages WHERE contact=?",
+        "SELECT count(*) FROM outbox WHERE contact=?",
+        "SELECT count(*) FROM received_packets WHERE contact=?",
+    ):
+        assert vault.db.execute(statement, (cid,)).fetchone() == (0,)
+    assert vault.db.execute(
+        "SELECT count(*) FROM deliveries WHERE queue=?", ("pm2:" + cid,)
+    ).fetchone() == (0,)
+
+
+def test_delete_removes_all_contact_state_and_fresh_pairing_uses_new_keys(application_pair):
+    alice, bob, queues, deliver, _ = application_pair
+    aid, bid = connect(application_pair)
+    original_a, original_b = alice.contact(aid), bob.contact(bid)
+    identity = alice.vault.get("identity")
+    alice.send(aid, "erase my outgoing history")
+    deliver(bob, bid)
+    bob.send(bid, "erase my incoming history")
+    while not any(item["direction"] == "in" for item in alice.history(aid)):
+        deliver(alice, aid)
+    other = alice.address()
+    unrelated = alice.contact(other["id"])
+    sender_client = alice.clients[aid]
+    assert alice.delete_contact(aid) == "server_deleted"
+    assert sender_client.transport is None
+    assert aid not in alice.clients
+    with pytest.raises(ValueError, match="unknown contact"):
+        alice.contact(aid)
+    assert_no_contact_messages(alice.vault, aid)
+    assert unb64(original_a["receive"]["sender_id"]) not in queues
+    assert alice.contact(other["id"]) == unrelated
+    assert alice.vault.get("identity") == identity
+    assert bob.contact(bid)["state"] == "active"  # Deletion is explicitly local to each endpoint.
+    assert bob.delete_contact(bid) == "server_deleted"
+    assert_no_contact_messages(bob.vault, bid)
+    new_aid, new_bid = connect(application_pair)
+    assert (new_aid, new_bid) != (aid, bid)
+    assert alice.contact(new_aid)["bundle"]["identity"] != original_a["bundle"]["identity"]
+    assert bob.contact(new_bid)["receive"]["sender_id"] != original_b["receive"]["sender_id"]
+    alice.send(new_aid, "fresh authenticated conversation")
+    assert deliver(bob, new_bid)[1]["body"] == "fresh authenticated conversation"
+    assert len(bob.history(new_bid)) == 1
+
+
+def test_delete_confirmation_cancelled_selection_and_unused_invitation(application_pair):
+    alice, _, _, _, _ = application_pair
+    aid, _ = connect(application_pair)
+    unused = alice.address()
+    retired = []
+    ui = ChatUI(alice, lambda text: None, on_deleting=retired.append)
+    ui.handle("/del Bob")
+    ui.handle("/ne")
+    assert alice.contact(aid)["state"] == "active"
+    assert retired == []
+    ui.handle("/del Bob")
+    ui.handle("/chat " + unused["id"])
+    with pytest.raises(ValueError, match="/verify"):
+        ui.handle("/ano")
+    assert alice.contact(aid)["state"] == "active"
+    ui.handle("/contacts --all")
+    number = ui.contact_choices.index(unused["id"]) + 1
+    ui.handle(f"/del {number}")
+    ui.handle("/ano")
+    assert retired == [unused["id"]]
+    assert ui.selected is None
+    assert ui.contact_choices == ()
+    assert alice.contact(aid)["state"] == "active"
+    with pytest.raises(ValueError, match="/chat"):
+        ui.handle("This must not silently go to the only remaining Bob")
+    assert alice.history(aid) == []
+    with pytest.raises(ValueError, match="unknown contact"):
+        alice.contact(unused["id"])
+    ui.handle("/del Bob")
+    ui.handle("/ano")
+    assert alice.all_contacts() == []
+
+
+def test_failed_remote_delete_retires_crypto_and_survives_restart_for_retry(
+    application_pair, monkeypatch, tmp_path
+):
+    alice, _, _, _, fake = application_pair
+    aid, _ = connect(application_pair)
+    alice.send(aid, "discard queued and accepted history")
+    delete_queue = fake.delete_queue
+
+    def offline(*args):
+        raise OSError("test network unavailable")
+
+    monkeypatch.setattr(fake, "delete_queue", offline)
+    output = []
+    ui = ChatUI(alice, output.append)
+    ui.handle("/del")
+    ui.handle("/ano")
+    pending = alice.contact(aid)
+    assert pending["state"] == "deleting"
+    assert pending["native"] is None and pending["sender_private"] is None
+    assert pending["outgoing"] is None and "bundle" not in pending
+    assert "invitation" not in pending
+    assert_no_contact_messages(alice.vault, aid)
+    assert any("Smazání SMP fronty se nepodařilo potvrdit" in text for text in output)
+    with pytest.raises(ValueError):
+        alice.send(aid, "a deleted ratchet cannot resume")
+    with pytest.raises(ValueError, match="pending deletion"):
+        alice.receive(aid, None)
+    alice.flush()
+    snapshot = tmp_path / "pending.vault"
+    alice.vault.backup(snapshot)
+    monkeypatch.setattr(fake, "delete_queue", delete_queue)
+    with Vault(snapshot, "Alice password") as reopened, Messenger(reopened) as restored:
+        resumed = ChatUI(restored, output.append)
+        resumed.handle("/del")  # Already confirmed durable intent: retry, no second /ano.
+        assert restored.all_contacts() == []
+        assert_no_contact_messages(reopened, aid)
+
+
+def test_delete_disk_failure_before_retirement_or_after_remote_ack_is_retryable(
+    application_pair, monkeypatch
+):
+    from private_messenger.storage import vault as storage
+
+    alice, _, queues, _, _ = application_pair
+    aid, _ = connect(application_pair)
+    alice.send(aid, "data before deletion")
+    original = alice.contact(aid)
+    encrypted = alice.vault.path.read_bytes()
+    write = storage.atomic_write
+
+    def full(*args, **kwargs):
+        raise OSError("test disk full")
+
+    monkeypatch.setattr(storage, "atomic_write", full)
+    with pytest.raises(OSError):
+        alice.delete_contact(aid)
+    assert alice.contact(aid) == original
+    assert alice.vault.path.read_bytes() == encrypted
+    sid = unb64(original["receive"]["sender_id"])
+    assert sid in queues
+    monkeypatch.setattr(storage, "atomic_write", write)
+    alice.begin_contact_deletion(aid)
+    retired_snapshot = alice.vault.path.read_bytes()
+    monkeypatch.setattr(storage, "atomic_write", full)
+    with pytest.raises(OSError):
+        alice.delete_contact(aid)
+    assert alice.contact(aid)["state"] == "deleting"
+    assert_no_contact_messages(alice.vault, aid)
+    assert alice.vault.path.read_bytes() == retired_snapshot
+    assert sid not in queues  # DEL succeeded even though the final local commit failed.
+    monkeypatch.setattr(storage, "atomic_write", write)
+    assert (
+        alice.delete_contact(aid) == "server_unconfirmed"
+    )  # AUTH is never called proof of deletion.
+    assert alice.all_contacts() == []
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_local_only_delete_is_explicit_and_never_contacts_server(
+    application_pair, monkeypatch, pending
+):
+    alice, _, queues, _, fake = application_pair
+    aid, _ = connect(application_pair)
+    sid = unb64(alice.contact(aid)["receive"]["sender_id"])
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("local-only deletion contacted the router")
+
+    monkeypatch.setattr(fake, "__enter__", forbidden)
+    output = []
+    ui = ChatUI(alice, output.append)
+    ui.handle("/del Bob --local")
+    assert "Fronta na serveru zůstane" in output[-1]
+    assert alice.contact(aid)["state"] == "active"
+    ui.handle("/ne")
+    assert alice.contact(aid)["state"] == "active"
+    if pending:
+        alice.begin_contact_deletion(aid)
+    ui.handle("/del Bob --local")
+    assert ui.pending_deletion == (aid, True)
+    ui.handle("/ano")
+    assert alice.all_contacts() == []
+    assert_no_contact_messages(alice.vault, aid)
+    assert sid in queues  # No claim of remote deletion, and all local queue keys are gone.
+    assert any("pouze místně; fronta na serveru nebyla odstraněna" in text for text in output)
+
+
+def test_chat_discards_receiver_events_queued_during_deletion(application_pair, monkeypatch):
+    from private_messenger.messaging import secure_terminal
+    from private_messenger.networking.connection import Network
+
+    alice, _, _, _, _ = application_pair
+    aid, _ = connect(application_pair)
+    ready, finished = threading.Event(), threading.Event()
+    decisions, worker_flags = [], []
+
+    def receiver(contact, network, events, worker_stop):
+        assert set(contact) == {"id", "incoming_server", "receive"}
+        worker_flags.append(worker_stop)
+        ready.set()
+        if not worker_stop.wait(5):
+            finished.set()
+            return
+        decision = queue.Queue(maxsize=1)
+        # Simulate events posted before the retired receiver observes its stop flag.
+        events.put(("connected", (aid, 18)))
+        events.put(("acked", (aid, secrets.token_bytes(24))))
+        events.put(("delivery", (aid, None, decision)))
+        events.put(("reconnecting", aid))
+        events.put(("fatal", aid))
+        decisions.append(decision.get(timeout=5))
+        finished.set()
+
+    def inputs(events, stop):
+        if ready.wait(5):
+            events.put(("input", "/del Bob"))
+            events.put(("input", "/ano"))
+            finished.wait(5)
+        events.put(("input", "/quit"))
+
+    monkeypatch.setattr(secure_terminal, "subscribe", receiver)
+    monkeypatch.setattr(secure_terminal, "keyboard", inputs)
+    monkeypatch.setattr(secure_terminal.sys, "stdin", io.StringIO())
+    assert secure_terminal.run_shell(alice.vault, network=Network("DIRECT")) == 0
+    assert worker_flags and all(flag.is_set() for flag in worker_flags)
+    assert decisions == [False]
+    assert alice.all_contacts() == []
+    assert_no_contact_messages(alice.vault, aid)
 
 
 def test_replay_new_router_id_does_not_advance_ratchet_or_duplicate_history(application_pair):

@@ -55,6 +55,33 @@ pokud je vypnutá, potvrzení počká v její frontě. Doručení závisí na re
 5. `/chat 2` přepne na Charlieho, `/chat 1` zpět na Boba. Prompt ukazuje například
    `Alice → Charlie>`, takže před odesláním vidíš příjemce. Každý kontakt má vlastní konverzaci.
 
+## Smazání kontaktu a nový test od začátku
+
+V okně Alice napiš `/del Charlie`, pak potvrď `/ano`. V okně Charlie napiš
+`/del Alice` a `/ano`. `/ne` smazání zruší. Lze také použít `/del ČÍSLO`
+z naposledy vypsaného seznamu nebo samotné `/del` pro právě vybraný kontakt.
+
+Příkaz odstraní místní historii, konverzační klíče, neodeslané zprávy a záznamy
+doručení daného kontaktu. Zastaví jeho příjem a smaže vlastní příchozí frontu
+na SMP serveru. Ostatní kontakty a profil zůstanou zachované. Smazaný vybraný
+kontakt se z promptu odstraní a jiný se za něj automaticky nevybere.
+
+Potom Charlie napíše `/address`. Alice vloží **nově vypsaný** příkaz `/add Charlie …`.
+Charlie použije `/accept`; oba `/verify`, porovnají nový otisk a při shodě `/ano`.
+Vzniknou nové kontaktní klíče, nové fronty a prázdná historie této konverzace.
+
+Nepoužité pozvánky uvidíš přes `/contacts --all` a smažeš také pomocí `/del ČÍSLO`.
+Pokud server neodpovídá, místní historie a konverzační klíče už jsou odstraněné,
+ale kontakt ukáže „čeká na dokončení smazání fronty“. Zůstávají jen šifrované
+přístupové údaje k frontě pro dokončení smazání. Opakuj `/del JMÉNO` nebo uvedené
+ID, případně i po restartu; již potvrzené smazání se znovu nepotvrzuje.
+Pokud chceš zahodit i zbývající místní přístupové údaje bez kontaktování serveru,
+použij `/del JMÉNO --local` a potvrď `/ano`. Fronta na serveru tím zůstane
+a bez zahozených klíčů už ji tímto klientem nesmažeš. Tato varianta je výslovná,
+nepoužije se automaticky při selhání sítě.
+Odpověď AUTH se nevydává za potvrzené smazání serverem. Starší zálohy a kopie
+u protistrany příkaz nesmaže; fyzický přepis dat na SSD ani v paměti Pythonu nezaručuje.
+
 ## Co přesně je adresa a vzdálené párování
 
 `/address` pokaždé vytvoří novou frontu, nový náhodný kontaktový identifikátor,

@@ -1,4 +1,4 @@
-# Private Messenger 0.2.3 — independent experimental SMP messenger
+# Private Messenger 0.2.4 — independent experimental SMP messenger
 
 Python 3.12+ speaks SMP directly to unmodified public routers, over **TCP/TLS, not
 WebSocket**. No SimpleX Chat engine, CLI, agent, database or Signal messaging
@@ -73,6 +73,30 @@ and `/address`. Alice pastes Charlie's generated `/add Charlie PMS2:…` command
 Charlie accepts with `/accept`; both compare `/verify` and confirm with `/ano`.
 Alice can then switch between Bob and Charlie using the numbered `/chat` list.
 Each contact has its own encrypted conversation.
+
+To reset a contact, use `/del Charlie` (or `/del 2` from the displayed list, or
+`/del` for the selected contact), then explicitly confirm `/ano`; `/ne` cancels.
+This removes that contact's local history, ratchet/prekeys, outgoing credentials,
+outbox and replay/delivery records, closes its sender connection, stops its
+receiver, and deletes **your own incoming SMP queue**. A deleted recipient is
+cleared from the prompt; another contact is never silently selected instead.
+To test from scratch, delete the corresponding contact on both endpoints, then
+generate a fresh `/address` and repeat `/add`, `/accept`, `/verify` and `/ano`.
+The local profile and unrelated contacts remain intact. `/contacts --all` also
+lists unused local invitations, which can be deleted by their displayed number.
+
+Deletion first durably retires local conversation state. If network/server deletion
+fails, a visible `deleting` record retains only encrypted queue credentials needed
+to retry `/del` (including after restart); no old session or queued message resumes.
+Only `OK` is reported as server-confirmed deletion. `AUTH` permits local cleanup
+but is reported as unconfirmed, since it cannot distinguish a missing queue from
+rejected credentials. Local deletion does not erase another device's copy, existing
+backups, or guarantee physical erasure on SSDs/in Python. See [security](SECURITY.md).
+
+If a server remains unavailable, `/del NAME --local` followed by `/ano` discards
+all remaining local contact data **without contacting the server**. The confirmation
+explicitly says that the remote queue will remain and its access keys will be lost.
+This is an opt-in local operation, not an automatic substitute for server deletion.
 
 [Podrobný český návod](TEST_TWO_CLIENTS_CS.md). Each profile is created separately
 in `~/.local/share/private-messenger/secure-profiles/`; passwords need not match.

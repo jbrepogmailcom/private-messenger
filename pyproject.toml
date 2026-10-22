@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "private-messenger"
-version = "0.2.3"
+version = "0.2.4"
 description = "Independent experimental SMP messenger with a pinned native ratchet backend"
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"

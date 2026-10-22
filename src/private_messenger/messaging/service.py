@@ -19,6 +19,7 @@ from private_messenger.networking.swiss import PUBLIC_NEW_AUTH, SERVER
 from private_messenger.networking.tor import configured_network
 from private_messenger.sessions import invitations, packets
 from private_messenger.smp.client import AmbiguousSendError, Client, RouterError
+from private_messenger.smp.queues import ReceiveQueue
 from private_messenger.storage.vault import Vault, VaultError
 
 SCHEMA = (
@@ -96,6 +97,55 @@ class Messenger:
         if row is None:
             raise ValueError("unknown contact ID")
         return json.loads(row[0])
+
+    def begin_contact_deletion(self, cid: str) -> None:
+        """Durably retire a contact before network I/O; retain only DEL credentials.
+
+        A failed remote deletion leaves a visible, non-messaging tombstone so it
+        can be retried after a crash. No old ratchet/outbox can resume meanwhile.
+        This is logical deletion, not guaranteed erasure of Python/SSD copies.
+        """
+        contact = self.contact(cid)
+        if contact["state"] == "deleting":
+            return
+        retired = {
+            key: contact[key]
+            for key in ("id", "name", "conversation", "incoming_server", "receive")
+        }
+        retired.update(
+            state="deleting", verified=False, native=None, outgoing=None, sender_private=None
+        )
+        with self.vault.transaction() as db:
+            db.execute("DELETE FROM messages WHERE contact=?", (cid,))
+            db.execute("DELETE FROM outbox WHERE contact=?", (cid,))
+            db.execute("DELETE FROM received_packets WHERE contact=?", (cid,))
+            db.execute("DELETE FROM deliveries WHERE queue=?", ("pm2:" + cid,))
+            put_contact(db, retired)
+        client = self.clients.pop(cid, None)
+        if client is not None:
+            client.close()
+
+    def delete_contact(self, cid: str, *, local_only: bool = False) -> str:
+        """Delete our recipient queue, then discard its last local credentials.
+
+        AUTH is intentionally not evidence of erasure: it may mean absent queue
+        or rejected credentials. Allow local cleanup, but report it as unavailable.
+        Other failures retain the tombstone for an explicit retry.
+        """
+        self.begin_contact_deletion(cid)
+        contact = self.contact(cid)
+        result = "local_only" if local_only else "server_deleted"
+        if not local_only:
+            try:
+                with Client(Server.parse(contact["incoming_server"]), self.network) as client:
+                    client.delete_queue(ReceiveQueue.restore(contact["receive"]))
+            except RouterError as exc:
+                if exc.response != b"ERR AUTH":
+                    raise
+                result = "server_unconfirmed"
+        with self.vault.transaction() as db:
+            db.execute("DELETE FROM contacts WHERE id=?", (cid,))
+        return result
 
     def _create(self, server: Server) -> dict:
         if len(self.all_contacts()) >= MAX_CONTACTS:
@@ -328,6 +378,8 @@ class Messenger:
 
     def receive(self, cid: str, delivery) -> dict:
         contact = self.contact(cid)
+        if contact["state"] == "deleting":
+            raise ValueError("contact pending deletion cannot receive messages")
         digest = hashlib.sha256(delivery.ciphertext).digest()
         stored = self.vault.db.execute(
             "SELECT app_id,kind FROM received_packets WHERE contact=? AND digest=?", (cid, digest)

@@ -471,3 +471,66 @@ while Bob is selected, rejected invitation pastes without side effects, duplicat
 invitation guidance, frozen menu numbers after another stored contact appears,
 out-of-range selection, and distinct per-contact message histories. These fixtures
 are separate from the actual three-terminal public-infrastructure run above.
+
+## Contact removal and fresh pairing — 0.2.4, 2026-10-22
+
+`/del NAME`, `/del NUMBER` (from the displayed menu), and `/del` for the selected
+contact require explicit `/ano`; `/ne` or intervening commands cancel the prompt.
+The immutable local contact ID is bound to the confirmation. `/contacts --all`
+also exposes unused local invitations for the same deletion workflow.
+
+Deletion has two durable steps. First, one encrypted transaction removes messages,
+outbox, replay/delivery records, prekeys, outgoing credentials and native session
+state; a non-messaging `deleting` record retains queue credentials for DEL. The
+sender connection closes and the contact-specific receiver is signalled to stop.
+Already queued delivery/ACK/connection/reconnect/fatal events are rejected for
+retired contacts before touching state. Receiver workers are given only the ID,
+incoming server and SMP receive credentials, never application ratchet state.
+Then native Python SMP sends authenticated DEL through the configured pinned/Tor
+transport, and a second transaction discards the final contact/queue credentials.
+AUTH allows local cleanup but is explicitly reported as unconfirmed, not proof
+of remote erasure. Other failures retain the visible retirement record for retry
+after restart, without restoring old messages or session keys.
+
+An explicit `/del NAME --local` requires its own confirmation, including when a
+remote deletion was previously confirmed but remains pending. It discards the
+final local credentials without contacting the server and warns that the remote
+queue remains. There is no silent local-only or DIRECT fallback. Deleting the
+selected contact blocks implicit recipient selection until the user chooses a
+contact; even a single remaining Bob cannot receive the next text by accident.
+
+Default checks: **98 passed, 21 skipped in 66.01s**, Ruff lint/format and Bandit
+passed; runtime pip-audit found no known vulnerabilities. Seven focused deletion
+tests passed, including final follow-up checks for explicit recipient selection
+and keeping native session state out of subscription workers. These tests use
+real native cryptography and encrypted vaults with a **mock relay**, not claimed
+as public-server interoperability. Assertions cover complete removal of relevant
+table records, preserved unrelated contacts/profile, new native identity and queue
+keys after fresh pairing, cancellation and stale confirmation, deletion of unused
+invitations, receiver event races, network failure and serialized retirement-state
+restoration, initial disk failure without side effects, final disk failure after
+DEL with an AUTH retry, and forbidden router contact for both ordinary and pending
+explicit local-only deletion. Logical state deletion does not prove physical
+memory/SSD erasure, remove old backups, or erase the other endpoint's history.
+
+Actual public Urban-Network SMP v18 over real Tor: the extended
+`test_three_real_terminals_add_contact_choose_recipient_offline_restart` passed
+in **150.97s**. Alice, Bob and Charlie ran in independent Python processes with
+real pseudo-terminals. Both sides confirmed contact deletion; authenticated DEL
+returned success and subsequent GET with the retired recipient credentials
+returned AUTH. Alice retained Bob, then paired with Charlie using a new invitation,
+new queue IDs, new identity keys and a different verified fingerprint. Fresh
+bidirectional messages, intended-recipient selection, Bob's offline delivery and
+restart, and absence of old contact records in all relevant tables passed.
+These observations do not prove a server discarded every copy of stored bytes.
+
+This run used a test-owned installed Tor as an explicitly configured external
+SOCKS proxy, with per-connection isolation and no DIRECT fallback. The harness
+allowed 300 seconds for Tor bootstrap; the application's 180-second default was
+unchanged. Earlier attempts encountered a bootstrap timeout or a PTY test timeout;
+the harness now drains Alice's long invitation command output before waiting for
+Charlie's request, avoiding producer backpressure and surfacing sender errors.
+The separate existing non-TTY public-Tor pairing/offline/replay test also passed
+during this follow-up. Temporary profiles and test-owned Tor were cleaned up;
+user profiles were not opened. This does not establish reliable bootstrap times
+or resistance to global traffic correlation.

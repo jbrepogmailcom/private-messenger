@@ -12,6 +12,26 @@ The old `chat-legacy` uses static NaCl Box keys and has no PFS/PCS/PQ protection
 
 ## Authentication and trust
 
+Contact removal uses a confirmed `/del` action. One encrypted atomic transaction
+deletes history, outbox, replay/delivery records, prekeys and native ratchet state,
+retaining a non-messaging `deleting` record with queue credentials for the DEL
+operation. The receiver is signalled to stop; already queued events for retired
+contacts are ignored before decryption/ACK/storage. Successful authenticated DEL
+is followed by a second atomic transaction removing the final queue credentials.
+A crash or network/disk failure cannot resume the old session; retrying `/del`
+finishes retirement, including after restart. AUTH is reported as unconfirmed,
+not proof of queue erasure: [SMP's DEL and error semantics](https://github.com/simplex-chat/simplexmq/blob/stable/protocol/simplex-messaging.md#delete-queue).
+
+Removal affects this profile and its own recipient queue, not another device's
+history or existing backups. A malicious server can retain copies despite OK;
+there is no cryptographic proof of server erasure. SQLite logical deletion and
+retiring native key state do not guarantee wiping Python objects, SSDs, swap,
+snapshots or backup media. Re-pair using a new invitation and fresh fingerprints.
+An explicitly confirmed `/del NAME --local` skips network deletion and discards
+the final local credentials. It warns that the remote queue remains and cannot
+subsequently be deleted with those lost credentials. There is no automatic
+local-only fallback after authentication, pinning or network failures.
+
 Trust the OS, interpreter/compiler, dependency sources/binaries, CSPRNG, libraries,
 trusted out-of-band invitation/fingerprint exchange and authentic SMP certificate
 pin. Global local cryptographic identity/contact lists are never given to a router.

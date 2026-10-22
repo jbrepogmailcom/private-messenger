@@ -82,6 +82,7 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
 
     events = queue.Queue(maxsize=64)
     workers = {}
+    worker_stops = {}
     resume = set()
     paused = set()
     stop = threading.Event()
@@ -97,13 +98,19 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
             resume.add(cid)
             paused.remove(cid)
 
+    def deleting(cid):
+        if cid in worker_stops:
+            worker_stops[cid].set()
+        resume.discard(cid)
+        paused.discard(cid)
+
     def prompt():
         if is_tty:
             peer = " → " + ui.label(ui.selected) if ui.selected else ""
             print(f"{safe(name)}{peer}> ", end="", flush=True)
 
     with Messenger(vault, network=network) as messenger:
-        ui = ChatUI(messenger, say, human=is_tty, on_verified=verified)
+        ui = ChatUI(messenger, say, human=is_tty, on_verified=verified, on_deleting=deleting)
         if interactive:
             print(
                 f"Přihlášen(a): {safe(name)} · experimentální verze bez nezávislého auditu.",
@@ -120,14 +127,25 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
             prompt()
         try:
             while not stop.is_set():
-                for contact in messenger.all_contacts():
-                    if contact["state"] not in ("invited", "waiting", "requested", "active"):
-                        continue
+                contacts = [
+                    {key: c[key] for key in ("id", "incoming_server", "receive")}
+                    for c in messenger.all_contacts()
+                    if c["state"] in ("invited", "waiting", "requested", "active")
+                ]
+                live_ids = {c["id"] for c in contacts}
+                for cid in list(workers):
+                    if cid not in live_ids:
+                        deleting(cid)
+                        if not workers[cid].is_alive():
+                            del workers[cid]
+                            del worker_stops[cid]
+                for contact in contacts:
                     cid = contact["id"]
                     if cid in resume and cid in workers and not workers[cid].is_alive():
                         del workers[cid]
                         resume.remove(cid)
                     if cid not in workers:
+                        worker_stops[cid] = threading.Event()
                         worker = threading.Thread(
                             target=subscribe,
                             args=(
@@ -137,7 +155,7 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                                     timeout=30 if messenger.network.mode == "TOR" else 8,
                                 ),
                                 events,
-                                stop,
+                                worker_stops[cid],
                             ),
                             daemon=True,
                         )
@@ -147,6 +165,12 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                     kind, value = events.get(timeout=0.2)
                 except queue.Empty:
                     kind, value = "idle", None
+                if kind in ("delivery", "acked", "connected", "reconnecting", "fatal"):
+                    cid = value[0] if kind in ("delivery", "acked", "connected") else value
+                    if cid not in live_ids:
+                        if kind == "delivery":
+                            value[2].put(False)
+                        continue  # A retired receiver can still have events already queued.
                 if kind == "input":
                     try:
                         if not ui.handle(value):
@@ -211,6 +235,8 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
             pass
         finally:
             stop.set()
+            for worker_stop in worker_stops.values():
+                worker_stop.set()
             deadline = time.monotonic() + 9
             for worker in workers.values():
                 worker.join(timeout=max(0, deadline - time.monotonic()))
