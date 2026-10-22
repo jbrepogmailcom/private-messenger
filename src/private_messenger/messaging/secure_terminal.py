@@ -5,29 +5,55 @@ import getpass
 import json
 import queue
 import re
-import shlex
 import sys
 import threading
 import time
-import unicodedata
 from dataclasses import replace
 from pathlib import Path
 
 from nacl.exceptions import CryptoError
 from OpenSSL import SSL
+from tqdm import tqdm
 
 from private_messenger.crypto.backend import SUITE, CryptoUnavailable, operation
 from private_messenger.identity import register
 from private_messenger.messaging.receiver import post, subscribe
 from private_messenger.messaging.service import Messenger
+from private_messenger.messaging.terminal_ui import ChatUI, safe
+from private_messenger.messaging.terminal_ui import chat_words as chat_words
 from private_messenger.networking.tor import configure_chat, messaging_network
 from private_messenger.storage.vault import Vault, read_private
 
 
-def safe(text: str) -> str:
-    return "".join(
-        f"\\u{ord(c):04x}" if unicodedata.category(c).startswith("C") else c for c in text
-    )
+class TorProgress:
+    """One terminal progress bar; readable event lines for redirected output."""
+
+    def __init__(self):
+        self.output = sys.stdout
+        self.bar = None
+
+    def __call__(self, text: str) -> None:
+        if not self.output.isatty():
+            print(text, file=self.output, flush=True)
+            return
+        if self.bar is None:
+            self.bar = tqdm(
+                total=100,
+                file=self.output,
+                dynamic_ncols=True,
+                bar_format="Tor: {percentage:3.0f}% |{bar}|",
+                mininterval=0,
+                miniters=1,
+                leave=True,
+            )
+        match = re.fullmatch(r"Tor: (\d{1,3}) %", text)
+        if match and 0 <= int(match[1]) <= 100:
+            self.bar.update(int(match[1]) - self.bar.n)
+
+    def close(self) -> None:
+        if self.bar is not None:
+            self.bar.close()
+            self.bar = None
 
 
 def keyboard(events, stop) -> None:
@@ -45,44 +71,53 @@ def keyboard(events, stop) -> None:
 
 
 def run_shell(vault: Vault, interactive=True, network=None) -> int:
-    from private_messenger.cli import execute, parser
-
     if network is None:
-        with messaging_network(vault, progress=lambda text: print(text, flush=True)) as route:
-            return run_shell(vault, interactive, route)
+        progress = TorProgress()
+        try:
+            with messaging_network(vault, progress=progress) as route:
+                progress.close()
+                return run_shell(vault, interactive, route)
+        finally:
+            progress.close()
 
     events = queue.Queue(maxsize=64)
     workers = {}
     resume = set()
     paused = set()
     stop = threading.Event()
-    selected = None
     last_flush = 0
     is_tty = interactive and sys.stdin.isatty()
     name = vault.get("identity", {}).get("name", "private-messenger")
 
     def say(text):
         print(("\r\033[K" if is_tty else "") + text, flush=True)
+
+    def verified(cid):
+        if cid in paused:
+            resume.add(cid)
+            paused.remove(cid)
+
+    def prompt():
         if is_tty:
-            print(f"{safe(name)}> ", end="", flush=True)
+            peer = " → " + ui.label(ui.selected) if ui.selected else ""
+            print(f"{safe(name)}{peer}> ", end="", flush=True)
 
     with Messenger(vault, network=network) as messenger:
+        ui = ChatUI(messenger, say, human=is_tty, on_verified=verified)
         if interactive:
             print(
                 f"Přihlášen(a): {safe(name)} · experimentální verze bez nezávislého auditu.",
                 flush=True,
             )
-            print(f"Kryptografie: {SUITE} · síť: {messenger.network.mode}", flush=True)
             print(
-                "address → pozvánka; connect POZVÁNKA; requests; accept ID; verify ID", flush=True
-            )
-            print(
-                "Po porovnání: verify ID --confirm OTISK. Zpráva: send ID TEXT. quit = konec.",
+                f"SMP · síť: {messenger.network.mode}"
+                if is_tty
+                else f"Kryptografie: {SUITE} · síť: {messenger.network.mode}",
                 flush=True,
             )
+            ui.welcome()
             threading.Thread(target=keyboard, args=(events, stop), daemon=True).start()
-            if is_tty:
-                print(f"{safe(name)}> ", end="", flush=True)
+            prompt()
         try:
             while not stop.is_set():
                 for contact in messenger.all_contacts():
@@ -113,58 +148,9 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                 except queue.Empty:
                     kind, value = "idle", None
                 if kind == "input":
-                    line = value.lstrip("/")
-                    if line in ("quit", "exit"):
-                        break
-                    if line.startswith("PMS2:"):
-                        line = "connect " + line
                     try:
-                        words = shlex.split(line)
-                        if not words:
-                            continue
-                        known = {
-                            "address",
-                            "connect",
-                            "requests",
-                            "accept",
-                            "verify",
-                            "contacts",
-                            "send",
-                            "history",
-                            "inbox",
-                            "identity",
-                            "status",
-                            "servers",
-                            "network",
-                            "backup",
-                            "rotate",
-                            "help",
-                        }
-                        if words[0] not in known and selected:
-                            words = ["send", selected, value]
-                        if words[0] == "help":
-                            say(
-                                "address; connect POZVÁNKA; requests; accept ID; verify ID; "
-                                "verify ID --confirm OTISK; send ID TEXT; "
-                                "contacts; history ID; quit"
-                            )
-                            continue
-                        args = parser().parse_args(words)
-                        if args.command in ("unlock", "register", "restore", "listen", "smp"):
-                            raise ValueError("command unavailable inside chat")
-                        if args.command == "network" and args.mode:
-                            raise ValueError(
-                                "Nejprve ukonči chat. Síť změň samostatným příkazem network, "
-                                "aby během změny nezůstalo aktivní staré spojení."
-                            )
-                        execute(args, vault, messenger)
-                        if args.command == "connect":
-                            selected = messenger.all_contacts()[-1]["id"]
-                        elif args.command in ("accept", "verify", "send"):
-                            selected = args.id
-                        if args.command == "verify" and args.confirm and args.id in paused:
-                            resume.add(args.id)
-                            paused.remove(args.id)
+                        if not ui.handle(value):
+                            break
                     except (
                         ValueError,
                         OSError,
@@ -174,10 +160,6 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                         CryptoUnavailable,
                     ) as exc:
                         say("Chyba: " + safe(str(exc)))
-                    except SystemExit:
-                        pass
-                    if is_tty:
-                        print(f"{safe(name)}> ", end="", flush=True)
                 elif kind == "delivery":
                     cid, delivery, decision = value
                     try:
@@ -185,35 +167,43 @@ def run_shell(vault: Vault, interactive=True, network=None) -> int:
                     except (ValueError, CryptoError) as exc:
                         paused.add(cid)
                         decision.put(False)
-                        say(f"[{cid}] Ověření selhalo; fronta nebyla potvrzena: {safe(str(exc))}")
+                        contact = messenger.contact(cid)
+                        if is_tty and contact["state"] == "active" and not contact["verified"]:
+                            say(
+                                f"{ui.label(cid)}: zpráva čeká na ověření. "
+                                f"Napiš verify {cid} a porovnej otisk."
+                            )
+                        else:
+                            say(
+                                f"[{cid}] Ověření selhalo; fronta nebyla potvrzena: "
+                                + safe(str(exc))
+                            )
+                        prompt()
                         continue
                     decision.put(True)
-                    if event["event"] == "text":
-                        peer = messenger.contact(cid)["name"] or cid
-                        say(f"{safe(peer)} [{cid}]: {safe(event['body'])}")
-                    elif event["event"] == "request":
-                        say(
-                            f"Požadavek [{cid}] od {safe(event['body']['name'])}. "
-                            f"Přijmi: accept {cid}"
-                        )
-                        say(json.dumps(messenger.fingerprint(cid)))
-                    elif event["event"] == "accept":
-                        selected = cid
-                        say(f"Kontakt [{cid}] přijal spojení. Porovnej otisk: verify {cid}")
-                    elif event["event"] == "receipt":
-                        say(f"[{cid}] Příjemce potvrdil zprávu {event['body']['message_id']}.")
+                    ui.received(cid, event)
                 elif kind == "acked":
                     cid, mid = value
                     vault.acknowledged("pm2:" + cid, mid)
                 elif kind == "connected":
                     cid, version = value
-                    say(f"Příjem připraven [{cid}] · SMP v{version}.")
+                    say(
+                        f"{ui.label(cid)}: příjem zpráv je připraven."
+                        if is_tty
+                        else f"Příjem připraven [{cid}] · SMP v{version}."
+                    )
                 elif kind == "reconnecting":
-                    say(f"[{value}] Obnovuji spojení přes stejný ověřený server.")
+                    say(
+                        f"{ui.label(value)}: obnovuji spojení."
+                        if is_tty
+                        else f"[{value}] Obnovuji spojení přes stejný ověřený server."
+                    )
                 elif kind == "fatal":
                     say(f"[{value}] Ověření serveru nebo fronty selhalo; příjem zastaven.")
                 elif kind == "input_error":
                     say("Příkaz je příliš dlouhý; nebyl proveden.")
+                if kind not in ("idle", "acked"):
+                    prompt()
                 if time.monotonic() - last_flush > 0.5:
                     messenger.flush()
                     last_flush = time.monotonic()

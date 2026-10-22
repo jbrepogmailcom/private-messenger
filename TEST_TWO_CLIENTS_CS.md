@@ -6,23 +6,27 @@ produkční aplikaci. Sestavení je popsané v README; na vývojovém počítač
 
 1. V prvním okně spusť `cd /home/janbenes/private-messenger` a `./chat Bob`.
    Zvol Bobovo heslo. Napiš `address`.
-2. Z výstupu zkopíruj celou hodnotu začínající `PMS2:` — bez okolních uvozovek.
+2. Z výstupu zkopíruj celý řádek začínající `PMS2:`.
    To je Bobova jednorázová adresa pro tento kontakt. Předej ji Alici důvěryhodnou cestou.
 3. Ve druhém okně spusť `cd /home/janbenes/private-messenger` a `./chat Alice`.
-   Zvol Alicino heslo. Vlož pozvánku `PMS2:…` a stiskni Enter.
-4. Bob uvidí žádost a příkaz například `accept a1b2c3d4e5f60718`. Proveď **příkaz,
-   který skutečně vypíše jeho okno**. Lokální ID Alice a Boba se liší.
-5. Každý napište `verify ID` se svým lokálním ID. Zobrazených 60 číslic porovnejte
-   osobně nebo jiným ověřeným kanálem. Potom každý napište:
-
-   ```text
-   verify ID --confirm SKUTECNY_60MISTNY_OTISK
-   ```
-
+   Zvol Alicino heslo. Vlož pozvánku `PMS2:…` a stiskni Enter. Lze vložit také
+   celý JSON výstup `{"expires": …, "id": …, "invitation": "PMS2:…"}` — samotný nebo
+   za příkazem `connect`.
+4. Bob napíše **`accept`**.
+5. Oba napíšete **`verify`**. Zobrazený otisk porovnejte osobně nebo jiným
+   důvěryhodným kanálem. Pokud se celý shoduje, oba napište **`ano`**.
+   Při neshodě napište `ne` a ověřte původ pozvánky.
 6. Alice napíše `Ahoj Bobe!`. Bob zprávu uvidí a může stejným způsobem odpovědět.
-   Po ověření je tento kontakt vybraný; s více kontakty piš `send ID TEXT`.
+   Zprávy pište přímo, bez příkazů. Fungují i uvozovky a apostrofy.
 
-`contacts` ukáže ID kontaktů; `history ID` historii; `quit` ukončí klienta.
+Není potřeba opisovat ID kontaktů ani otisk do příkazu. Při čekání chat vypíše,
+který krok ještě chybí. Po restartu se jediný existující kontakt vybere automaticky.
+Se stejnou již použitou pozvánkou znovu nezačínej; původní konverzace zůstává uložená.
+
+`contacts` ukáže jména a stav; `chat Bob` vybere Boba; `history` ukáže historii;
+`send Bob TEXT` pošle konkrétnímu kontaktu; `quit` ukončí klienta. Při více stejných
+jménech klient vyžádá jednoznačné ID a nikoho za tebe náhodně nevybere.
+Původní příkazy s ID a `verify ID --confirm OTISK` nadále fungují.
 `server_accepted` znamená přijetí routerem. Teprve `recipient_received` / „Příjemce
 potvrdil zprávu“ označuje autentizované potvrzení klienta. Neznamená přečtení člověkem.
 
@@ -60,7 +64,8 @@ Není automaticky převedené; staré Box konverzace ratchet zpětně nezískaj�
 Nevypisuj soukromý obsah vaultů ani neposílej někomu jejich hesla.
 
 Výchozí síť je **TOR**. `./chat Alice` a `./chat Bob` si každý spustí vlastní Tor,
-počkají na `Tor: 100 %` a teprve potom se připojí k SMP. Tor musí být nainstalovaný;
+ukazují teploměr knihovny `tqdm` na jednom řádku, počkají na `Tor: 100%`
+a teprve potom se připojí k SMP. Tor musí být nainstalovaný;
 na vývojovém počítači už je. Při jeho selhání se klient přímo k routeru nepřipojí.
 Starší profil s DIRECT se při tomto spuštění po odemknutí přepne na TOR. Běžící
 starou verzi nejprve ukonči pomocí `quit`. Dřívější přímá spojení změna neskryje.

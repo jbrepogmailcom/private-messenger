@@ -1,4 +1,4 @@
-# Private Messenger 0.2.1 — independent experimental SMP messenger
+# Private Messenger 0.2.2 — independent experimental SMP messenger
 
 Python 3.12+ speaks SMP directly to unmodified public routers, over **TCP/TLS, not
 WebSocket**. No SimpleX Chat engine, CLI, agent, database or Signal messaging
@@ -23,10 +23,10 @@ On Bob's terminal:
 ./chat Bob
 ```
 
-Choose Bob's own password. The launcher starts Tor and waits for `Tor: 100 %`
-before connecting to SMP. Enter `address`, then send the returned **whole PMS2:
-invitation** to Alice through an independently trusted channel. Bob also sees a
-local contact `id`; names are not server-side addresses.
+Choose Bob's own password. The launcher starts Tor and waits for `Tor: 100%`
+before connecting to SMP. The `tqdm` progress bar updates on one terminal line.
+Enter `address`, then send the returned **whole PMS2: invitation** to Alice through
+an independently trusted channel. Names are local labels, not server-side addresses.
 
 On Alice's terminal, independently:
 
@@ -34,20 +34,30 @@ On Alice's terminal, independently:
 ./chat Alice
 ```
 
-Choose Alice's own password, paste Bob's invitation and press Enter. Bob sees a
-request and runs `accept ID` using the ID shown in **Bob's** window. Alice and Bob
-run `verify ID` using their respective local IDs, compare the 60-digit fingerprint
-in person or over another authenticated channel, then each enters:
+Choose Alice's own password, paste Bob's invitation and press Enter. You can also
+paste the complete JSON export, with or without a leading `connect`. Bob sees a
+request and types `accept`. Both type `verify`, compare the entire displayed
+fingerprint in person or over another authenticated channel, and only when it
+matches, each types:
 
 ```text
-verify ID --confirm THE_60_DIGITS
+ano
 ```
 
 Alice can now type `Ahoj Bobe!`; Bob sees it and can reply by typing text. With
-multiple contacts use `send ID TEXT`. `history ID` shows delivery states; `quit`
-exits. `server_accepted` is distinct from the encrypted `recipient_received`
+multiple contacts use `chat Bob` to select a conversation, or `send Bob TEXT`.
+`contacts` lists names and pairing status; `history` shows the selected conversation.
+Names must be unique; ambiguous names require an explicit contact ID. On restart,
+a single existing contact is selected automatically. `quit` exits.
+The chat explains whether acceptance or verification is still missing.
+`server_accepted` is distinct from the encrypted `recipient_received`
 receipt. These receipts confirm application processing, not that a human read it.
 Offline messages wait at the router while its retention/quota permits.
+
+The one-shot CLI still supports `verify ID --confirm FINGERPRINT` for scripts.
+The guided `ano` confirmation is available after displaying `verify` in a terminal;
+changing conversations cancels that confirmation. It never bypasses fingerprint
+comparison or automatically trusts an invitation's self-signature.
 
 [Podrobný český návod](TEST_TWO_CLIENTS_CS.md). Each profile is created separately
 in `~/.local/share/private-messenger/secure-profiles/`; passwords need not match.

@@ -364,3 +364,55 @@ owned child cleanup and encrypted/restored guard metadata. Existing SOCKS wire
 fixtures verify remote DNS and isolation. Ruff lint/format, Bandit, runtime
 pip-audit passed. Native cryptography was unchanged by this network correction.
 No global packet-capture or traffic-correlation resistance claim is added.
+
+## Guided chat correction — 0.2.2, 2026-10-22
+
+The reported failure was reproducible UI behavior: pasting the complete invitation
+export was shell-split, `verify` required an unexplained local ID, and unaccepted
+or unverified contacts produced a generic English send error. The terminal now
+accepts the whole JSON export or the PMS2 token, supports unique contact names,
+bare `accept`/`verify`/`history`, and explicitly guides acceptance and verification.
+After displaying a fingerprint it offers `ano`/`ne`; only an explicit confirmation
+of the unchanged displayed contact sets verification. Conversation changes cancel
+that prompt. Ordinary messages preserve quotes and apostrophes without shell parsing.
+Human output shows pairing/delivery states and redraws the prompt once per event.
+
+Actual unmodified Urban-Network SMP over real Tor: **2 passed in 97.09s**:
+
+- `test_guided_two_real_terminals_over_tor_online_offline_and_restart` uses two
+  independent Python processes attached to actual pseudo-terminals, exercising the
+  human-facing interface. A complete JSON invitation crosses terminal input;
+  sending before acceptance is blocked; Bob types bare `accept`; Alice uses
+  `verify Bob` and Bob bare `verify`; the test independently compares their full
+  fingerprints before typing `ano`. Unicode/quotes/apostrophes arrive intact in
+  both directions with authenticated receipts. Bob exits completely; an offline
+  message survives both-process exit/restart; the resumed single contact needs no
+  ID. Bob's history has exactly two incoming messages.
+- `test_secure_remote_pairing_online_offline_restart_and_replay[TOR]` repeats
+  the existing machine-readable CLI regression through actual Tor, including
+  complete JSON paste, delayed recipient verification/resubscription, authenticated
+  receipts, offline delivery, both-process restart and replay deduplication.
+
+Both clients in this run used a configured external SOCKS port backed by the
+test's own installed Tor process, with per-connection SOCKS isolation. Bootstrap
+reached 100%; no direct SMP fallback was used. Temporary queues/profiles were
+cleaned up and only that test-owned Tor was stopped. User profiles were untouched.
+The two-owned-Tor default-launcher result above remains a historical 0.2.1 run;
+it was not repeated as part of this UI correction. A preceding disposable Tor
+attempt had timed out at 56%, illustrating that independent Tor bootstrap can be
+slow; this update does not claim to fix network bootstrap delays.
+
+Default suite: **87 passed, 21 skipped in 71.40s**. Added application fixtures use
+real native cryptography and encrypted vaults with a **mock relay**, separately
+from the two real-infrastructure tests. They cover copied exports without trusting
+outer metadata, malformed exports without network/queue effects, guided pairing,
+refusal before verification, negative confirmation, duplicate-name ambiguity,
+cancelled verification after contact selection, restart selection and short parser
+errors. Final follow-up UI checks also cover repeated acceptance and ambiguity
+during acceptance. These are bounded functional checks, not a security audit.
+
+Pinned `tqdm` 4.70.1 supplies the one-line Tor thermometer. A manual 80-column PTY
+check verified carriage-return redraws, one final newline, a partial bar on failure
+and idempotent close. Redirected output retains ordinary event lines. Runtime and
+development dependency scans found no known vulnerabilities. Native primitives,
+ratchet composition and their documented security limitations are unchanged.

@@ -4,6 +4,7 @@ These tests are NOT evidence of SMP/public-server interoperability.
 """
 
 import copy
+import json
 import secrets
 import time
 from contextlib import ExitStack
@@ -15,7 +16,9 @@ pytest.importorskip("private_messenger._crypto_native", reason="build native cry
 
 from private_messenger.config import b64, unb64
 from private_messenger.identity import register
+from private_messenger.messaging.secure_terminal import chat_words
 from private_messenger.messaging.service import Messenger
+from private_messenger.messaging.terminal_ui import ChatUI
 from private_messenger.smp.client import AmbiguousSendError
 from private_messenger.smp.queues import Delivery, ReceiveQueue
 from private_messenger.storage.vault import Vault
@@ -119,6 +122,149 @@ def test_remote_invitation_acceptance_unicode_and_authenticated_receipt(applicat
     assert alice.history(aid)[0]["id"] == mid
     assert alice.history(aid)[0]["status"] == "recipient_received"
     assert bob.history(bid)[0]["status"] == "received"
+
+
+@pytest.mark.parametrize(
+    "form", ["json_command", "json_paste", "quoted_json", "token", "token_command"]
+)
+def test_copied_invitation_export_connects_without_trusting_outer_metadata(application_pair, form):
+    from private_messenger.cli import parser
+
+    alice, bob, _, deliver, _ = application_pair
+    exported = bob.address()
+    bid = exported["id"]
+    exported.update(id="untrusted-export-id", expires=0, verified=True)
+    raw = json.dumps(exported)
+    line = {
+        "json_command": "connect " + raw,
+        "json_paste": raw,
+        "quoted_json": "connect '" + raw + "' --name Bob",
+        "token": exported["invitation"],
+        "token_command": "connect " + exported["invitation"],
+    }[form]
+    args = parser().parse_args(chat_words(line))
+    aid = alice.connect(args.invitation, args.name)
+    assert aid != exported["id"]
+    assert alice.contact(aid)["verified"] is False
+    assert deliver(bob, bid)[1]["event"] == "request"
+    bob.accept(bid)
+    assert deliver(alice, aid)[1]["event"] == "accept"
+    assert alice.fingerprint(aid)["fingerprint"] == bob.fingerprint(bid)["fingerprint"]
+    with pytest.raises(ValueError, match="verify"):
+        alice.send(aid, "outer metadata cannot authorize text")
+
+
+@pytest.mark.parametrize(
+    "value", ['{"invitation": 7}', '{"expires": 0}', '{"invitation":', "x" * 8193]
+)
+def test_bad_copied_export_creates_no_contact_or_router_queue(application_pair, value):
+    alice, _, queues, _, _ = application_pair
+    before = len(queues)
+    with pytest.raises(ValueError):
+        alice.connect(value)
+    assert alice.all_contacts() == []
+    assert len(queues) == before
+
+
+def test_damaged_pasted_export_cannot_be_mistaken_for_text_to_another_contact():
+    value = '{"expires": 0, "invitation": "PMS2:TRUNCATED"'
+    assert chat_words(value) == ["connect", value]
+    assert chat_words("connect " + value) == ["connect", value]
+
+
+def test_guided_chat_pairing_verification_and_plain_text_without_internal_ids(application_pair):
+    alice, bob, _, deliver, _ = application_pair
+    alice_output, bob_output = [], []
+    resumed = []
+    a = ChatUI(alice, alice_output.append)
+    b = ChatUI(bob, bob_output.append, on_verified=resumed.append)
+    b.handle("address")
+    invitation = bob_output[-1]
+    assert invitation.startswith("PMS2:")
+    a.handle(invitation)
+    aid = a.selected
+    bid = bob.all_contacts()[0]["id"]
+    a.handle("Ahoj")
+    assert alice.history(aid) == []
+    assert "accept" in alice_output[-1]
+    b.received(bid, deliver(bob, bid)[1])
+    b.handle("accept")
+    a.received(aid, deliver(alice, aid)[1])
+    assert a.label(aid) == "Bob"
+    assert b.label(bid) == "Alice"
+    b.handle("accept")  # An already accepted contact gives guidance, without another packet.
+    assert "verify" in bob_output[-1]
+    a.handle("Ahoj")
+    assert alice.history(aid) == []
+    assert "verify" in alice_output[-1]
+    a.handle("verify Bob")
+    b.handle("verify")
+    assert a.pending_verification[1] == b.pending_verification[1]
+    a.handle("ne")
+    assert not alice.contact(aid)["verified"]
+    a.handle("verify")
+    a.handle("ano")
+    b.handle("ano")
+    assert alice.contact(aid)["verified"] and bob.contact(bid)["verified"]
+    assert resumed == [bid]
+    text = "Ahoj Bobe! \"Uvozovka a apostrof nejsou problém: don't 🐴"
+    a.handle(text)
+    assert alice.history(aid)[0]["body"] == text
+    # Acceptance receipt can precede application text in Bob's queue.
+    event = deliver(bob, bid)[1]
+    if event["event"] == "receipt":
+        event = deliver(bob, bid)[1]
+    assert event["body"] == text
+    b.received(bid, event)
+    assert text in bob_output[-1]
+    assert "čekám na potvrzení příjemce" in alice_output[-1]
+    assert not any(line.startswith('{"') for line in alice_output + bob_output)
+    # A single existing contact remains usable immediately after restarting the UI.
+    restarted = ChatUI(bob, bob_output.append)
+    restarted.handle("Ahoj Alice, odpověď po přihlášení")
+    assert bob.history(bid)[-1]["direction"] == "out"
+    assert restarted.selected == bid
+
+
+def test_chat_rejects_ambiguous_names_and_does_not_retarget_verification(application_pair):
+    from private_messenger.messaging.service import put_contact
+
+    alice, _, _, _, _ = application_pair
+    aid, _ = connect(application_pair)
+    duplicate = copy.deepcopy(alice.contact(aid))
+    duplicate.update(id=secrets.token_hex(8), verified=False, name="Bob")
+    original = alice.contact(aid)
+    original.update(verified=False)
+    with alice.vault.transaction() as db:
+        put_contact(db, original)
+        put_contact(db, duplicate)
+    ui = ChatUI(alice, lambda text: None)
+    with pytest.raises(ValueError, match="konkrétní kontakt"):
+        ui.handle("verify Bob")
+    with pytest.raises(ValueError, match="konkrétní kontakt"):
+        ui.handle("accept Bob")
+    with pytest.raises(ValueError, match="konkrétní kontakt"):
+        ui.handle("Ahoj")
+    ui.handle("verify " + aid)
+    ui.handle("chat " + duplicate["id"])
+    assert ui.pending_verification is None
+    # A stale 'ano' after selecting someone else cannot verify either contact.
+    ui.handle("ano")
+    assert not alice.contact(aid)["verified"]
+    assert not alice.contact(duplicate["id"])["verified"]
+    assert alice.history(aid) == []
+    assert alice.history(duplicate["id"]) == []
+
+
+def test_chat_parser_errors_are_short_and_damaged_exports_are_never_sent(application_pair):
+    alice, _, _, _, _ = application_pair
+    aid, _ = connect(application_pair)
+    ui = ChatUI(alice, lambda text: None)
+    with pytest.raises(ValueError):
+        ui.handle('{"invitation": "PMS2:TRUNCATED"')
+    with pytest.raises(ValueError, match="Nápověda"):
+        ui.handle("send")
+    assert alice.history(aid) == []
 
 
 def test_replay_new_router_id_does_not_advance_ratchet_or_duplicate_history(application_pair):

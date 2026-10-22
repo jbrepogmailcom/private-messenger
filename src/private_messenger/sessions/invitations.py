@@ -26,6 +26,24 @@ BUNDLE_LENGTHS = {
 }
 
 
+def unwrap(value: str) -> str:
+    """Accept a copied CLI export; only its signed invitation is authoritative."""
+    value = value.strip()
+    if len(value) > 8192:
+        raise ValueError("invitation input exceeds size limit")
+    if value.startswith("{"):
+        try:
+            exported = json.loads(value)
+        except (ValueError, RecursionError) as exc:
+            raise ValueError("invalid invitation export JSON") from exc
+        if not isinstance(exported, dict) or not isinstance(exported.get("invitation"), str):
+            raise ValueError("invitation export must contain a PMS2 invitation")
+        value = exported["invitation"].strip()
+    if not value.startswith(PREFIX) or len(value) > MAX_INVITATION:
+        raise ValueError("expected a PMS2 invitation or its JSON export")
+    return value
+
+
 def canonical(value) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 

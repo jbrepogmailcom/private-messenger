@@ -32,6 +32,14 @@ same-host DIRECT connections and timing still create links. Names/contact lists
 are not router registration fields. Initial requests contain encrypted display
 names before manual fingerprint verification, so trust invitation delivery too.
 
+The terminal's guided verification displays the complete fingerprint and accepts
+an explicit `ano` only for that displayed contact and unchanged fingerprint.
+Selecting another conversation cancels the prompt. A unique name or local ID
+selects a contact; duplicate names fail closed. A copied JSON invitation export
+does not supply trusted metadata: only its signed PMS2 content is used. These UI
+rules do not authenticate a human automatically; users must compare fingerprints
+through an independently trusted channel. Blindly confirming defeats that check.
+
 PFS concerns network transcripts after key erasure, not plaintext saved locally.
 PCS experiments model a passive attacker after a one-time snapshot, not a persistent
 active clone. SPQR-only recovery test isolates fresh KEM entropy from classical DH;

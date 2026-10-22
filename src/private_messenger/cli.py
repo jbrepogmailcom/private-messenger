@@ -41,8 +41,8 @@ def output(value) -> None:
     print(json.dumps(value, sort_keys=True), flush=True)
 
 
-def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Experimental independent SMP transport; NOT audited")
+def parser(parser_class=argparse.ArgumentParser) -> argparse.ArgumentParser:
+    p = parser_class(description="Experimental independent SMP transport; NOT audited")
     p.add_argument("--version", action="version", version=__version__)
     p.add_argument("--vault", type=Path, default=Path.home() / ".private-messenger/state.vault")
     p.add_argument(

@@ -160,7 +160,8 @@ class Messenger:
     def connect(self, invitation: str, name: str = "") -> str:
         if len(name.encode()) > 256:
             raise ValueError("contact name exceeds 256 UTF-8 bytes")
-        data = invitations.decode(invitation)  # authenticate capabilities before any network access
+        # Export metadata is ignored; verify the signed inner invitation before network access.
+        data = invitations.decode(invitations.unwrap(invitation))
         if any(c["conversation"] == data["id"] for c in self.all_contacts()):
             raise ValueError("invitation already used by this profile")
         configured = self.vault.get("servers", [SERVER])
